@@ -1,62 +1,68 @@
 # M49 — Human vs AI Annotation Benchmark
 
-Bộ khung website chạy local cho đề tài so sánh **manual / AI / AI + người** trên ba tác vụ: bounding box 2D, instance segmentation và bounding box 3D. AI chạy ngoài hệ thống trên Colab; website nhập kết quả về.
+M49 là bộ khung ứng dụng local để xây dựng thử nghiệm so sánh ba phương pháp gán nhãn:
 
-Đây là **scaffold để phát triển tiếp**, chưa phải hệ thống benchmark hoàn chỉnh. Không hiển thị điểm đánh giá hoặc dữ liệu thí nghiệm giả.
+- **Manual:** người gán nhãn từ đầu.
+- **AI:** kết quả dự đoán do mô hình tạo.
+- **Assisted:** người chỉnh sửa kết quả AI.
 
-## Những gì đã chạy được
+Phạm vi dữ liệu gồm bounding box 2D, instance segmentation và bounding box 3D. Backend hiện nhận dữ liệu theo schema JSON nội bộ M49; AI được chạy riêng, ví dụ trên Google Colab, rồi nhập kết quả vào ứng dụng.
 
-- Tạo và chọn dự án theo tác vụ, định nghĩa các lớp.
-- Upload nhiều ảnh JPG/PNG qua giao diện; dự án 3D nhận thêm BIN/PCD.
-- Xem trước ảnh và danh sách tài nguyên.
-- Nhập ground truth / AI dưới dạng JSON theo schema nội bộ M49.
-- Kiểm tra tên mẫu, lớp, hình học, confidence, giới hạn tọa độ ảnh và quan hệ bản nhãn sửa AI.
-- Sửa danh sách đối tượng bằng JSON, lưu phiên bản manual hoặc assisted vào database.
-- Nạp bản sao nhãn AI để sửa; giữ nguyên dự đoán AI ban đầu.
-- Thống kê số tài nguyên và phiên bản nhãn; API OpenAPI tại `/docs`.
-- PostgreSQL + vùng lưu tệp bền vững bằng Docker; SQLite khi chạy trực tiếp.
+> **Trạng thái:** đây là scaffold phát triển, chưa phải hệ thống benchmark hoàn chỉnh. Ứng dụng hiện hỗ trợ quản lý dự án, nhập dữ liệu và lưu các phiên bản nhãn; chưa có editor hình học tương tác hoặc bộ tính điểm. Xem [Roadmap](docs/ROADMAP.md) để biết các phần còn thiếu.
 
-## Chưa triển khai
+## Tính năng hiện có
 
-- Trình vẽ bounding box, polygon/brush và chỉnh hộp 3D bằng chuột.
-- Overlay nhãn, autosave, undo/redo, timer và lịch sử thao tác.
-- Upload ZIP, upload tiếp tục, thanh tiến trình theo byte.
-- Adapter chuyển trực tiếp BDD100K/KITTI/COCO; hiệu chỉnh camera và ghép ảnh–LiDAR.
-- Mask dạng bitmap/RLE hoặc polygon có lỗ; schema hiện chỉ hỗ trợ một polygon đơn cho mỗi instance.
-- Train/inference hoàn chỉnh: notebook chỉ là mẫu hợp đồng xuất dữ liệu, chưa kết nối model.
-- IoU, AP, tổng hợp thời gian, chi phí, correction rate và xuất báo cáo.
-- Tài khoản, phân quyền, chia nhiệm vụ, migrations và triển khai public.
+- Tạo dự án theo tác vụ và khai báo danh sách lớp.
+- Tải ảnh JPG/PNG; dự án 3D cũng nhận BIN/PCD.
+- Xem danh sách tài nguyên và xem trước ảnh.
+- Nhập ground truth và kết quả AI bằng JSON theo schema M49.
+- Kiểm tra tác vụ, tên mẫu, lớp, hình học, confidence và giới hạn tọa độ ảnh.
+- Tạo phiên bản nhãn manual hoặc assisted từ giao diện JSON; bản AI gốc được giữ riêng.
+- Lưu dữ liệu trong SQLite khi chạy trực tiếp, hoặc PostgreSQL và Docker volumes khi chạy bằng Docker Compose.
+- Cung cấp API và tài liệu OpenAPI tại `/docs`.
 
-Ground truth được ẩn khỏi màn hình gán nhãn, **chưa được bảo vệ bằng phân quyền API**. Bản này dùng cho phát triển local một người; chưa dùng nguyên trạng để tổ chức benchmark mù nhiều người.
+## Chưa được triển khai
 
-## Chạy nhanh bằng Docker
+- Vẽ/chỉnh box, polygon, mask hoặc cuboid bằng chuột; overlay nhãn.
+- Autosave, undo/redo, timer, event log và chia nhiệm vụ.
+- Bộ chấm IoU/F1/AP, dashboard chất lượng, báo cáo thời gian và chi phí.
+- Huấn luyện hoặc inference model trong ứng dụng. Các notebook trong `colab/` chỉ là template, chưa kết nối mô hình.
+- Adapter nhập trực tiếp định dạng BDD100K/KITTI/COCO, calibration và ghép ảnh–LiDAR.
+- Đăng nhập, phân quyền và bảo vệ ground truth ở API.
 
-Yêu cầu Docker Engine/Desktop và Docker Compose; tài khoản hệ điều hành phải có quyền truy cập Docker daemon.
+Ứng dụng hiện phù hợp để phát triển và thử nghiệm local một người, **chưa phù hợp để tổ chức benchmark mù nhiều người**. Công thức đánh giá được ghi riêng trong [Đặc tả công thức đánh giá](docs/RATE_SCORE.md); tài liệu công thức không có nghĩa là bộ chấm đã được cài vào ứng dụng.
+
+## Chạy bằng Docker
+
+Yêu cầu Docker Engine/Desktop và Docker Compose.
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-Mở:
+Truy cập:
 
-- Website: http://localhost:3000
-- Swagger API: http://localhost:8000/docs
-- Health: http://localhost:8000/api/health
+- Website: <http://localhost:3000>
+- API: <http://localhost:8000>
+- Swagger UI: <http://localhost:8000/docs>
+- Health check: <http://localhost:8000/api/health>
 
-Các cổng chỉ bind `127.0.0.1`. PostgreSQL không mở cổng ra máy chủ.
+Các cổng chỉ bind vào `127.0.0.1`; PostgreSQL không mở cổng ra host.
+
+Dừng ứng dụng:
 
 ```bash
 docker compose down
 ```
 
-Lệnh trên giữ database và uploads trong Docker volumes. `docker compose down -v` xóa toàn bộ các volumes của dự án, chỉ dùng khi chủ động muốn reset dữ liệu.
+Lệnh này giữ dữ liệu trong Docker volumes. Chỉ dùng `docker compose down -v` khi chủ động muốn xóa database và các tệp đã tải lên.
 
 ## Chạy trực tiếp để phát triển
 
-Yêu cầu Python 3.11+ (khuyến nghị 3.12), Node.js 22 và pnpm 10.11.0.
+Yêu cầu Python 3.11 trở lên (khuyến nghị 3.12), Node.js 22 và pnpm 10.11.0.
 
-Terminal 1:
+### Backend
 
 ```bash
 cd backend
@@ -66,9 +72,11 @@ python -m pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Trên Ubuntu, nếu không tạo được venv, cài gói `python3-venv` tương ứng. Windows dùng `.venv\Scripts\activate`.
+Trên Ubuntu, nếu tạo virtual environment thất bại, cài gói `python3-venv` phù hợp với phiên bản Python. Trên Windows, kích hoạt bằng `.venv\Scripts\activate`.
 
-Terminal 2:
+### Frontend
+
+Mở terminal thứ hai:
 
 ```bash
 cd frontend
@@ -78,79 +86,82 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Mở http://localhost:5173. Vite chuyển `/api` đến backend, tương tự Nginx trong Docker. Chạy backend từ thư mục `backend/` để database SQLite và storage được tạo đúng chỗ.
+Mở <http://localhost:5173>. Vite chuyển tiếp các yêu cầu `/api` đến backend. Khi chạy backend, giữ working directory là `backend/` để SQLite và vùng lưu tệp được đặt đúng chỗ.
 
-## Thử nhanh với dữ liệu mẫu
+## Thử luồng nhập/lưu với dữ liệu mẫu
 
-1. Tạo dự án `Demo 2D`, tác vụ `Bounding box 2D`, một lớp `car`.
-2. Upload `examples/demo.png` ở mục dữ liệu.
-3. Import `examples/ground_truth_2d.json` vào ground truth.
-4. Import `examples/ai_2d.json` vào kết quả AI.
-5. Mở **Gán nhãn**, chọn **Người sửa AI**, điền người thực hiện và chọn lần chạy AI.
-6. Sửa tọa độ trong JSON, điền thời gian đo bên ngoài nếu có, rồi lưu.
-7. Mở **Kết quả** để kiểm tra số phiên bản nhãn.
+1. Tạo dự án `Demo 2D`, chọn tác vụ **Bounding box 2D** và lớp `car`.
+2. Trong mục **Dữ liệu**, tải `examples/demo.png`.
+3. Nhập `examples/ground_truth_2d.json` làm ground truth.
+4. Nhập `examples/ai_2d.json` làm kết quả AI.
+5. Mở mục **Gán nhãn**, chọn chế độ người sửa AI, nhập tên người gán nhãn và chọn lần chạy AI.
+6. Sửa JSON rồi lưu phiên bản assisted.
+7. Mở mục **Kết quả** để xem số lượng phiên bản nhãn đã lưu.
 
-Ảnh và nhãn mẫu là hình học tổng hợp dùng kiểm tra luồng nhập/lưu; không phải dữ liệu hoặc kết quả BDD100K thực tế. Không dùng chúng trong báo cáo thí nghiệm.
+Đây là luồng kiểm tra nhập/lưu, **không phải phép đánh giá chất lượng**. Ảnh và nhãn mẫu là dữ liệu tổng hợp, không phải dữ liệu hoặc kết quả BDD100K thực tế. Không dùng chúng trong báo cáo thí nghiệm.
 
-Với segmentation, tạo dự án tương ứng, upload cùng ảnh rồi nhập `examples/ai_segmentation.json`. Với 3D, dùng `examples/demo.bin` và `examples/ai_3d.json`. BIN mẫu chỉ có vài điểm tổng hợp, không phải cảnh LiDAR thực tế.
+Ví dụ khác:
 
-## Cấu trúc thư mục
+- Segmentation: tạo dự án segmentation, tải ảnh mẫu và nhập `examples/ai_segmentation.json`.
+- 3D: tạo dự án 3D, tải `examples/demo.bin` và nhập `examples/ai_3d.json`. BIN mẫu chỉ có vài điểm tổng hợp, không phải cảnh LiDAR thực tế.
 
-```text
-m49-benchmark/
-├── compose.yaml
-├── backend/
-│   ├── app/
-│   │   ├── main.py           # API, upload, kiểm tra và lưu nhãn
-│   │   ├── models.py         # Project, Asset, LabelSet
-│   │   ├── schemas.py        # Hợp đồng dữ liệu ba tác vụ
-│   │   ├── db.py             # PostgreSQL / SQLite + storage
-│   │   ├── adapters/         # Điểm mở rộng BDD100K, KITTI, Colab
-│   │   └── evaluation/       # Điểm mở rộng bộ chấm từng tác vụ
-│   └── tests/                # Kiểm thử upload và tính toàn vẹn nhãn
-├── frontend/src/
-│   ├── App.tsx               # Dự án, upload, kết quả
-│   ├── api.ts                # Gọi API
-│   └── features/annotation/  # Không gian sửa JSON; thay bằng editor
-├── colab/                    # Ba notebook template và hướng dẫn
-├── examples/                 # Dữ liệu tổng hợp thử API/UI
-├── docs/                     # Kiến trúc, schema, roadmap
-└── scripts/                  # Export JSON Schema
-```
+## Hợp đồng dữ liệu và đánh giá
+
+- [Hợp đồng dữ liệu M49](docs/DATA_CONTRACT.md): schema, hệ tọa độ và quy tắc nhãn.
+- [Đặc tả công thức đánh giá](docs/RATE_SCORE.md): các chỉ số cho bộ nhãn cuối và công thức tham chiếu COCO/KITTI.
+- [Kiến trúc](docs/ARCHITECTURE.md): các thành phần và cách lưu dữ liệu.
+- [Roadmap](docs/ROADMAP.md): các mốc phát triển.
+
+JSON M49 là định dạng nội bộ, không phải định dạng gốc của BDD100K/KITTI/COCO. Cần adapter chuyển đổi trước khi nhập dữ liệu từ các bộ dữ liệu đó.
+
+M49 phân biệt **đánh giá chất lượng bộ nhãn cuối** với **đánh giá detector theo benchmark**. COCO-style AP và KITTI AP_R40 có quy tắc matching riêng, không thay thế cho TP/FP/FN, Precision, Recall, F1 và IoU của giao thức M49. Hiện các phép tính này mới được mô tả trong tài liệu, chưa được ứng dụng thực thi.
 
 ## API chính
 
 | Method | Endpoint | Chức năng |
 |---|---|---|
-| GET/POST | `/api/projects` | Xem/tạo dự án |
-| GET/POST | `/api/projects/{id}/assets` | Xem/upload một tài nguyên |
-| GET | `/api/assets/{id}/file` | Đọc ảnh/point cloud |
-| POST | `/api/projects/{id}/imports/ground_truth` | Import JSON chuẩn |
-| POST | `/api/projects/{id}/imports/ai` | Import JSON AI |
-| POST | `/api/projects/{id}/annotations/manual` | Lưu phiên bản manual |
-| POST | `/api/projects/{id}/annotations/assisted` | Lưu phiên bản sửa AI |
-| GET | `/api/projects/{id}/label-sets` | Metadata các phiên bản |
-| GET | `/api/label-sets/{id}` | Nội dung JSON một phiên bản |
-| GET | `/api/projects/{id}/summary` | Số lượng, chưa phải điểm đánh giá |
+| `GET`, `POST` | `/api/projects` | Liệt kê hoặc tạo dự án |
+| `GET`, `POST` | `/api/projects/{id}/assets` | Liệt kê hoặc tải tài nguyên |
+| `GET` | `/api/assets/{id}/file` | Đọc ảnh hoặc point cloud |
+| `POST` | `/api/projects/{id}/imports/ground_truth` | Nhập ground truth JSON |
+| `POST` | `/api/projects/{id}/imports/ai` | Nhập kết quả AI JSON |
+| `POST` | `/api/projects/{id}/annotations/manual` | Lưu nhãn manual |
+| `POST` | `/api/projects/{id}/annotations/assisted` | Lưu nhãn assisted |
+| `GET` | `/api/projects/{id}/label-sets` | Liệt kê metadata các bộ nhãn |
+| `GET` | `/api/label-sets/{id}` | Đọc nội dung một bộ nhãn |
+| `GET` | `/api/projects/{id}/summary` | Đếm tài nguyên và phiên bản nhãn |
 
-Upload dùng multipart field `file`. Mỗi tệp tối đa 32 MiB. API nhận từng tệp; giao diện upload nhiều tệp tuần tự. Khi một tệp lỗi, các tệp trước đó đã thành công vẫn được giữ.
+Upload dùng multipart field `file`, giới hạn 32 MiB mỗi tệp. API nhận từng tệp; giao diện tải nhiều tệp tuần tự. Nếu một tệp lỗi, các tệp đã tải thành công trước đó vẫn được giữ.
 
 ## Kiểm thử
+
+Backend:
 
 ```bash
 cd backend
 python -m pytest -q
 ```
 
+Frontend:
+
 ```bash
 cd frontend
 pnpm build
 ```
 
-Tests dùng SQLite in-memory và storage tạm, không sửa dữ liệu local. Xem `docs/VALIDATION.md` về kết quả kiểm tra bộ khung được bàn giao.
+Backend tests dùng SQLite in-memory và vùng lưu tạm. Xem [Kết quả xác nhận](docs/VALIDATION.md) để biết phạm vi xác minh đã ghi nhận.
 
-## Bước phát triển tiếp
+## Cấu trúc dự án
 
-Theo `docs/ROADMAP.md`: ưu tiên hoàn thiện editor 2D và bộ chấm 2D trước, sau đó segmentation và 3D. Theo dõi việc ánh xạ lớp và hệ tọa độ trong `docs/DATA_CONTRACT.md`.
+```text
+.
+├── backend/       # FastAPI, SQLModel, kiểm tra và lưu nhãn
+├── frontend/      # React, TypeScript, Vite
+├── colab/         # Notebook template theo từng tác vụ
+├── docs/          # Kiến trúc, hợp đồng dữ liệu, công thức, roadmap
+├── examples/      # Dữ liệu tổng hợp dùng thử
+├── scripts/       # Công cụ phát triển schema
+└── compose.yaml   # Backend, frontend và PostgreSQL
+```
 
-Dependencies được pin để tái lập khung chạy; `backend/requirements-lock.txt` ghi lại môi trường Python đã kiểm thử và được dùng làm constraints. Mô hình AI cần được xác minh và pin riêng tại thời điểm tích hợp; bộ khung không tải checkpoint hay GPU model khi khởi động website.
+Các dependencies được pin để hỗ trợ tái lập môi trường. `backend/requirements-lock.txt` được dùng làm constraints cho dependencies Python. Mô hình AI/checkpoint chưa được chọn hoặc tải khi khởi động ứng dụng; cần xác minh và pin riêng khi tích hợp.
