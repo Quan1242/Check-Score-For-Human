@@ -22,7 +22,7 @@ Chất lượng hình học, khả năng tìm đủ đối tượng, thời gian
 | $\tau$ | Ngưỡng IoU để chấp nhận ghép cặp |
 | $M$ | Tập cặp ghép một–một hợp lệ |
 | $N$ | Số mẫu được giao; $n$ là số mẫu hoàn thành |
-| $|A|$ | Số phần tử, diện tích hoặc thể tích của $A$ tùy ngữ cảnh |
+| $\lvert A\rvert$ | Số phần tử, diện tích hoặc thể tích của $A$ tùy ngữ cảnh |
 | $\mathrm{N/A}$ | Giá trị không xác định/không áp dụng; không tự thay bằng 0 hoặc 1 |
 
 **Điều kiện so sánh:** cùng danh sách lớp, cùng mẫu và ground truth đã khóa, cùng chính sách che khuất/cắt biên/ignore; cùng định nghĩa “hoàn thành”. Dữ liệu nên được chia theo cảnh/video để tránh rò rỉ giữa các tập.
@@ -366,13 +366,13 @@ Nếu cần khoảng tin cậy cho chênh lệch chất lượng hoặc tiết k
 
 ## 15. Tài liệu dùng để đối chiếu công thức
 
-- **[S1] COCO API:** https://github.com/cocodataset/cocoapi
-- **[S2] COCO evaluation protocol (`COCOeval`):** https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/cocoeval.py
-- **[S3] COCO mask representation / IoU:** https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/mask.py
-- **[S4] SciPy — Linear sum assignment (đối chiếu bản chất bài toán gán, không định nghĩa giao thức M49):** https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.linear_sum_assignment.html
-- **[S5] Shapely — Geometry intersection:** https://shapely.readthedocs.io/en/stable/reference/shapely.intersection.html
-- **[S6] PyTorch3D — 3D box overlap (hộp định hướng tổng quát):** https://pytorch3d.readthedocs.io/en/latest/modules/ops.html
-- **[S7] KITTI 3D benchmark:** https://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=3d
-- **[S8] OpenPCDet — KITTI evaluator tham khảo:** https://github.com/open-mmlab/OpenPCDet/tree/master/pcdet/datasets/kitti/kitti_object_eval_python
+- **[S1] COCO API:** <https://github.com/cocodataset/cocoapi>
+- **[S2] COCO evaluation protocol (`COCOeval`):** <https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/cocoeval.py>
+- **[S3] COCO mask representation / IoU:** <https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/mask.py>
+- **[S4] SciPy — Linear sum assignment (đối chiếu bản chất bài toán gán, không định nghĩa giao thức M49):** <https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.linear_sum_assignment.html>
+- **[S5] Shapely — Geometry intersection:** <https://shapely.readthedocs.io/en/stable/reference/shapely.intersection.html>
+- **[S6] PyTorch3D — 3D box overlap (hộp định hướng tổng quát):** <https://pytorch3d.readthedocs.io/en/latest/modules/ops.html>
+- **[S7] KITTI 3D benchmark:** <https://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=3d>
+- **[S8] OpenPCDet — KITTI evaluator tham khảo:** <https://github.com/open-mmlab/OpenPCDet/tree/master/pcdet/datasets/kitti/kitti_object_eval_python>
 
 ---
