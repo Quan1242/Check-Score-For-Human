@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "task": "instance_segmentation",
+  "name": "Synthetic schema demo \u2014 not model inference",
+  "run": {
+    "model": "synthetic-example"
+  },
+  "samples": [
+    {
+      "asset_name": "demo.png",
+      "objects": [
+        {
+          "id": "object-1",
+          "category": "car",
+          "confidence": 0.8,
+          "geometry": {
+            "kind": "polygon",
+            "points": [
+              [
+                100,
+                100
+              ],
+              [
+                300,
+                100
+              ],
+              [
+                300,
+                220
+              ],
+              [
+                100,
+                220
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,389 @@
+{
+  "$defs": {
+    "Box2D": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "bbox2d",
+          "title": "Kind",
+          "type": "string"
+        },
+        "xyxy": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Xyxy",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "xyxy"
+      ],
+      "title": "Box2D",
+      "type": "object"
+    },
+    "Cuboid": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "cuboid3d",
+          "title": "Kind",
+          "type": "string"
+        },
+        "center": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Center",
+          "type": "array"
+        },
+        "size_lwh": {
+          "maxItems": 3,
+          "minItems": 3,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Size Lwh",
+          "type": "array"
+        },
+        "yaw": {
+          "title": "Yaw",
+          "type": "number"
+        },
+        "frame": {
+          "const": "lidar",
+          "default": "lidar",
+          "title": "Frame",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "center",
+        "size_lwh",
+        "yaw"
+      ],
+      "title": "Cuboid",
+      "type": "object"
+    },
+    "ObjectLabel": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "category": {
+          "minLength": 1,
+          "title": "Category",
+          "type": "string"
+        },
+        "geometry": {
+          "discriminator": {
+            "mapping": {
+              "bbox2d": "#/$defs/Box2D",
+              "cuboid3d": "#/$defs/Cuboid",
+              "polygon": "#/$defs/Polygon"
+            },
+            "propertyName": "kind"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Box2D"
+            },
+            {
+              "$ref": "#/$defs/Polygon"
+            },
+            {
+              "$ref": "#/$defs/Cuboid"
+            }
+          ],
+          "title": "Geometry"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confidence"
+        }
+      },
+      "required": [
+        "id",
+        "category",
+        "geometry"
+      ],
+      "title": "ObjectLabel",
+      "type": "object"
+    },
+    "Polygon": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "polygon",
+          "title": "Kind",
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "number"
+              }
+            ],
+            "type": "array"
+          },
+          "minItems": 3,
+          "title": "Points",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "points"
+      ],
+      "title": "Polygon",
+      "type": "object"
+    },
+    "RunMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "checkpoint": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checkpoint"
+        },
+        "gpu": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gpu"
+        },
+        "library_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Library Version"
+        },
+        "inference_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inference Seconds"
+        },
+        "training_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Training Seconds"
+        },
+        "compute_cost_vnd": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compute Cost Vnd"
+        }
+      },
+      "title": "RunMetadata",
+      "type": "object"
+    },
+    "SampleLabels": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_name": {
+          "title": "Asset Name",
+          "type": "string"
+        },
+        "objects": {
+          "items": {
+            "$ref": "#/$defs/ObjectLabel"
+          },
+          "title": "Objects",
+          "type": "array"
+        },
+        "active_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Active Seconds"
+        }
+      },
+      "required": [
+        "asset_name",
+        "objects"
+      ],
+      "title": "SampleLabels",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "task": {
+      "enum": [
+        "detection_2d",
+        "instance_segmentation",
+        "detection_3d"
+      ],
+      "title": "Task",
+      "type": "string"
+    },
+    "name": {
+      "maxLength": 120,
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "annotator": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Annotator"
+    },
+    "parent_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Id"
+    },
+    "run": {
+      "$ref": "#/$defs/RunMetadata"
+    },
+    "samples": {
+      "items": {
+        "$ref": "#/$defs/SampleLabels"
+      },
+      "minItems": 1,
+      "title": "Samples",
+      "type": "array"
+    }
+  },
+  "required": [
+    "task",
+    "name",
+    "samples"
+  ],
+  "title": "LabelBundle",
+  "type": "object"
+}
