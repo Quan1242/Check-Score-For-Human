@@ -3,6 +3,7 @@ import { api, postJSON, upload } from './api';
 import type { Asset, LabelSet, Project, Task } from './types';
 import { taskNames } from './types';
 import AnnotationWorkspace from './features/annotation/AnnotationWorkspace';
+import { ExperimentResults, ExperimentSetup } from './features/Experiments';
 
 type Summary = { assets: number; label_sets: Record<string, number>; evaluation_status: string };
 export default function App() {
@@ -17,6 +18,7 @@ export default function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [editorBlocked, setEditorBlocked] = useState(false);
   const project = projects.find(p => p.id === selected);
   const refresh = useCallback(async () => {
     if (!selected) return;
@@ -46,8 +48,8 @@ export default function App() {
   }
   return <div className="layout">
     <aside><div className="brand">M49<span>ANNOTATION BENCHMARK</span></div><p className="muted">Local workspace · v0.1 scaffold</p>
-      <label>Dự án<select disabled={busy} value={selected} onChange={e => setSelected(e.target.value)}><option value="">Chọn dự án</option>{projects.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select></label>
-      <nav>{[['data','01 · Dữ liệu'],['annotate','02 · Gán nhãn'],['results','03 · Kết quả']].map(([id,title]) => <button className={tab === id ? 'active' : ''} onClick={() => setTab(id)} key={id}>{title}</button>)}</nav>
+      <label>Dự án<select disabled={busy || editorBlocked} value={selected} onChange={e => setSelected(e.target.value)}><option value="">Chọn dự án</option>{projects.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select></label>
+      <nav>{[['data','01 · Dữ liệu'],['annotate','02 · Gán nhãn'],['results','03 · Kết quả']].map(([id,title]) => <button disabled={editorBlocked && id !== tab} className={tab === id ? 'active' : ''} onClick={() => setTab(id)} key={id}>{title}</button>)}</nav>
       <p className="muted">AI chạy trên Colab.<br/>Nhập kết quả để lưu và xử lý trên máy.</p>
       <a href="http://localhost:8000/docs" target="_blank" rel="noreferrer">API documentation ↗</a>
     </aside>
@@ -57,7 +59,7 @@ export default function App() {
         <label>Tên dự án<input value={name} onChange={e => setName(e.target.value)} placeholder="BDD100K · thử nghiệm 01"/></label>
         <label>Tác vụ<select value={task} onChange={e => setTask(e.target.value as Task)}>{Object.entries(taskNames).map(([id,title]) => <option key={id} value={id}>{title}</option>)}</select></label>
         <label>Các lớp, cách nhau bằng dấu phẩy<input value={classes} onChange={e => setClasses(e.target.value)}/></label>
-        <button disabled={busy || !name.trim()} onClick={() => void create()}>Tạo dự án</button>
+        <button disabled={busy || editorBlocked || !name.trim()} onClick={() => void create()}>Tạo dự án</button>
       </div></details>
       {project && tab === 'data' && <>
         <section className="panel"><h2>Nhập dữ liệu</h2><p className="muted">Upload ảnh trước, sau đó nhập nhãn theo schema M49. Tối đa 32 MiB/tệp. ZIP và chuyển đổi nhãn gốc nằm trong roadmap.</p><div className="upload-grid">
@@ -67,8 +69,9 @@ export default function App() {
         </div></section>
         <section className="panel"><h2>Dữ liệu đã lưu · {assets.length}</h2><div className="gallery">{assets.map(a => <article key={a.id}>{a.kind === 'image' ? <img loading="lazy" src={a.url} alt={a.name}/> : <div className="cloud">POINT CLOUD</div>}<strong>{a.name}</strong><small>{a.width ? `${a.width} × ${a.height}` : a.kind}</small></article>)}</div>{!assets.length && <p className="muted">Chưa có dữ liệu.</p>}</section>
       </>}
-      {project && tab === 'annotate' && <AnnotationWorkspace key={project.id} project={project} assets={assets} labels={labels} onSaved={refresh}/>}
-      {project && tab === 'results' && <section className="panel"><h2>Tình trạng thử nghiệm</h2><div className="metrics">{Object.entries(summary?.label_sets ?? {}).map(([source,count]) => <div key={source}><strong>{count}</strong><span>{source}</span></div>)}</div><p className="notice">Chưa tính IoU/mAP, thời gian tổng hợp hoặc chi phí. Các số trên chỉ là số phiên bản nhãn đã lưu, không phải điểm benchmark.</p><table><thead><tr><th>Bộ nhãn</th><th>Nguồn</th><th>Mã phiên bản</th></tr></thead><tbody>{labels.map(l => <tr key={l.id}><td>{l.name}</td><td>{l.source}</td><td><code>{l.id}</code></td></tr>)}</tbody></table></section>}
+      {project && tab === 'data' && <ExperimentSetup key={project.id} project={project} assets={assets} labels={labels}/>}
+      {project && tab === 'annotate' && <AnnotationWorkspace key={project.id} project={project} assets={assets} labels={labels} onSaved={refresh} onBlocked={setEditorBlocked}/>}
+      {project && tab === 'results' && <><ExperimentResults key={project.id} project={project}/><section className="panel"><h2>Phiên bản nhãn đã lưu</h2><div className="metrics">{Object.entries(summary?.label_sets ?? {}).map(([source,count]) => <div key={source}><strong>{count}</strong><span>{source}</span></div>)}</div><p className="muted">Các số này đếm phiên bản, không phải điểm chất lượng.</p></section></>}
     </main>
   </div>;
 }

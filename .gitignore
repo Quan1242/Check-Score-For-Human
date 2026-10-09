@@ -9,3 +9,4 @@ dist/
 storage/
 !storage/.gitkeep
 *.tsbuildinfo
+data/

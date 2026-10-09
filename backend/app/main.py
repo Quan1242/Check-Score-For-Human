@@ -120,7 +120,7 @@ def asset_file(asset_id: str, session: Session = Depends(get_session)):
     return FileResponse(path)
 
 
-def save_bundle(project_id: str, source: str, bundle: LabelBundle, session: Session):
+def save_bundle(project_id: str, source: str, bundle: LabelBundle, session: Session, commit: bool = True):
     project = get_project(project_id, session)
     if bundle.task != project.task:
         raise HTTPException(422, "Tác vụ của nhãn không khớp dự án")
@@ -156,7 +156,10 @@ def save_bundle(project_id: str, source: str, bundle: LabelBundle, session: Sess
                 raise HTTPException(422, "Polygon nằm ngoài ảnh gốc")
     row = LabelSet(project_id=project_id, source=source, name=bundle.name, annotator=bundle.annotator, parent_id=bundle.parent_id, payload=bundle.model_dump(mode="json"))
     session.add(row)
-    session.commit()
+    if commit:
+        session.commit()
+    else:
+        session.flush()
     session.refresh(row)
     return {"id": row.id, "source": source, "samples": len(bundle.samples)}
 
@@ -195,4 +198,8 @@ def summary(project_id: str, session: Session = Depends(get_session)):
     project = get_project(project_id, session)
     assets = session.exec(select(Asset).where(Asset.project_id == project_id)).all()
     labels = session.exec(select(LabelSet).where(LabelSet.project_id == project_id)).all()
-    return {"project": project, "assets": len(assets), "label_sets": {source: sum(r.source == source for r in labels) for source in ["ground_truth", "ai", "manual", "assisted"]}, "evaluation_status": "not_implemented"}
+    return {"project": project, "assets": len(assets), "label_sets": {source: sum(r.source == source for r in labels) for source in ["ground_truth", "ai", "manual", "assisted"]}, "evaluation_status": "m49_available_pending_validation"}
+
+# Imported after save_bundle so the assignment router can share validation.
+from .benchmark import router as benchmark_router
+app.include_router(benchmark_router)

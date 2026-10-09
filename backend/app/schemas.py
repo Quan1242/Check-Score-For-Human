@@ -32,7 +32,35 @@ class Box2D(StrictModel):
 
 class Polygon(StrictModel):
     kind: Literal["polygon"]
-    points: list[tuple[float, float]] = Field(min_length=3)
+    points: list[tuple[float, float]] = Field(min_length=3, max_length=1000)
+
+    @model_validator(mode="after")
+    def simple_polygon(self):
+        points = self.points
+        if len(set(points)) != len(points):
+            raise ValueError('Polygon không được có đỉnh trùng; không lặp đỉnh đầu ở cuối')
+        signed = sum(a[0]*b[1]-b[0]*a[1] for a, b in zip(points, points[1:]+points[:1]))
+        if abs(signed) < 1e-9:
+            raise ValueError('Polygon phải có diện tích dương')
+        def cross(a, b, c):
+            return (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
+        def on(a, b, p):
+            return min(a[0],b[0]) <= p[0] <= max(a[0],b[0]) and min(a[1],b[1]) <= p[1] <= max(a[1],b[1])
+        for i, b in enumerate(points):
+            a, c = points[i-1], points[(i+1) % len(points)]
+            if cross(a,b,c) == 0 and (b[0]-a[0])*(c[0]-b[0])+(b[1]-a[1])*(c[1]-b[1]) < 0:
+                raise ValueError('Các cạnh kề của polygon không được chồng lên nhau')
+        edges = list(zip(points, points[1:]+points[:1]))
+        for i, (a, b) in enumerate(edges):
+            for j in range(i+1, len(edges)):
+                if j == i+1 or (i == 0 and j == len(edges)-1):
+                    continue
+                c, d = edges[j]
+                ab_c, ab_d, cd_a, cd_b = cross(a,b,c), cross(a,b,d), cross(c,d,a), cross(c,d,b)
+                if (ab_c*ab_d < 0 and cd_a*cd_b < 0) or any((value == 0 and on(u,v,p)) for value,u,v,p in
+                        [(ab_c,a,b,c), (ab_d,a,b,d), (cd_a,c,d,a), (cd_b,c,d,b)]):
+                    raise ValueError('Polygon không được tự giao hoặc tự chạm')
+        return self
 
 class Cuboid(StrictModel):
     kind: Literal["cuboid3d"]
