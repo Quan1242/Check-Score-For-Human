@@ -12,4 +12,4 @@ export type Annotation = { id: string; category: string; geometry: Geometry; con
 export type Experiment = { id: string; name: string; ground_truth_id: string; asset_ids: string[]; iou_threshold: number };
 export type Assignment = { id: string; experiment_id: string; asset_id: string; annotator: string;
   mode: 'manual' | 'assisted'; parent_id: string | null; draft_id: string | null; final_id: string | null;
-  revision: number; active_seconds: number; running: boolean };
+  revision: number; active_seconds: number; running: boolean; timer_remaining_seconds: number };

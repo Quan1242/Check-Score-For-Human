@@ -1,5 +1,44 @@
 ﻿# Báo cáo thay đổi trước khi push
 
+## 13/10/2026 — Google Drive OAuth và notebook theo lượt
+
+63 test backend đạt với `-W error`; TypeScript/Vite build đạt. Kiểm tra OAuth PKCE, state hết hạn/dùng lại/từ chối, thiếu scope, thu hồi refresh token, chặn nguồn ngoài; token không nằm trong API status hoặc notebook. Kiểm tra cấp ID trước upload, retry không trùng, upload checkpoint theo chunk, chặn tài khoản khác, checksum/job sai, sinh notebook 2D/segmentation và gửi marker cuối sau retry. Vòng 10 Manual → Google Drive giả lập → 10 Assisted → chấm ba nguồn đạt. Các kiểm tra HTTP/Google dùng giả lập, chưa chứng minh OAuth thật, MIME/upload trên Drive, cấp quyền Colab hoặc inference GPU hoạt động thực tế. Chưa nghiệm thu UI trực tiếp.
+
+## 12/10/2026 — Luồng khép kín ba kiểu
+
+52 test backend đạt với `-W error`, 5 test frontend đạt, TypeScript/Vite build thành công. Thêm test vòng đủ 10 Manual → nhận AI fixture → 10 Assisted → báo cáo đủ ba nguồn và speedup đo ở server; test tiếp tục tiến độ, chặn AI trước 10 Manual, không tạo trùng nhiệm vụ và chọn/upload checkpoint. Notebook đọc lựa chọn model/confidence từ request; custom model kiểm tra checksum trước khi load. Chưa chạy inference GPU, Drive thật hoặc kiểm duyệt giao diện thực tế. Luồng đầy đủ hiện dành cho 2D; các tác vụ chưa đủ dữ liệu/model được khóa và giải thích. Thêm bảng GuidedRun, không đổi cột bảng cũ. Hướng dẫn [GUIDED_WORKFLOW](GUIDED_WORKFLOW.md).
+
+## 12/10/2026 — Dataset, timer, tự đồng bộ Colab
+
+Đã chạy `python -m pytest -q`: 49 test đạt; `npm test`: 5 test đạt; `npm run build`: TypeScript/Vite đạt. Dùng npm để chạy script vì pnpm chưa nằm trong PATH; không cài/nâng dependency. Test mới kiểm tra BDD100K/KITTI fixture, chuyển tâm/yaw với calibration, rollback, thiếu mẫu/checksum, retry không nhập trùng, transport notebook và thời gian phía server. CVAT test được cập nhật để thời gian khai báo không dùng làm speedup.
+
+Chưa tải dataset thật, chưa chạy GPU/Colab hoặc Drive thực tế. Công cụ UI không có trình duyệt kết nối nên chưa nghiệm thu giao diện. AI 3D vẫn template. Thêm bảng ColabJob bằng create_all, không sửa schema bảng cũ; một worker local. Xem [hướng dẫn](DATASETS_COLAB.md).
+
+## Cập nhật ngày 10/10/2026 — Demo một người, ưu tiên thời gian
+
+> **Kết quả mới nhất (ưu tiên hơn lịch sử bên dưới):** 41 test backend trên Python 3.14.6
+> với cảnh báo coi là lỗi, 5 test hình học frontend và build TypeScript/Vite đều đạt.
+> `pip check` sạch, Uvicorn khởi động thành công với SQLite tạm. Test bao phủ COCO box/polygon,
+> lưu/chốt nhiệm vụ segmentation/3D, revision cũ, giữ AI gốc, IoU/Dice và validator notebook.
+>
+> Docker Compose hợp lệ; backend trên host đã thử thành công với PostgreSQL 15.19 trong container
+> riêng (nhập dữ liệu, CVAT, chấm và xuất CSV/ZIP). Build toàn stack/PostgreSQL 17 bị chặn bởi
+> chứng chỉ Docker Hub `x509: certificate signed by unknown authority`; container thử đã dọn.
+> Resolver có wheel Linux x64/Python 3.14; chưa xác minh runtime Docker đầy đủ.
+>
+> Chưa kiểm duyệt thao tác trình duyệt thực tế hoặc chạy inference Colab/GPU.
+> Notebook segmentation có pipeline và validator được test cục bộ, notebook 3D vẫn là template.
+> CI đã cấu hình Windows/Ubuntu và frontend nhưng chưa chạy trên GitHub vì chưa push.
+> Hướng dẫn chạy và sử dụng được tập trung ở [README](../README.md).
+
+### Lịch sử ngày 10/10/2026
+
+Đã bổ sung code timer heartbeat/lease/idle, giới hạn quy mô và khóa chấm trong một backend process, ghép cặp manual/assisted để so sánh thời gian trên giao diện/CSV, thao tác lưu-chốt và phím tắt. Dùng trường timer hiện có, không đổi schema database. Notebook 2D đã có pipeline YOLO11s trên Colab; segmentation/3D vẫn là template. Script prepare_demo.py chọn 20 ảnh chính và 3 pilot từ danh sách ứng viên đã chia độ khó, đồng thời xuất lịch hai lượt.
+
+Tiêu chí Đạt: đủ cặp trên cùng người/cùng ảnh, thời gian đo dương, assisted nhanh hơn tổng thể và F1 không thấp hơn từng ảnh. Chưa gồm thời gian AI và nhập dữ liệu vào tổng thời gian thao tác của người. Không ép kết quả luôn đạt.
+
+Theo yêu cầu người dùng, **không chạy test/build, server, notebook, inference, script chuẩn bị dữ liệu hoặc đo tải** trong đợt này. Chỉ đọc/rà mã nguồn và kiểm tra diff; chưa xác nhận hoạt động đúng. Checklist bàn giao tại [DEMO_PROTOCOL.md](DEMO_PROTOCOL.md). Không cài dependency local, không tải dataset/checkpoint, không commit/push. Nội dung các mốc 09/10 bên dưới là lịch sử trước thay đổi này.
+
 ## Mốc ghi nhận 08:54 ngày 09/10/2026
 
 Múi giờ: UTC+07:00, Việt Nam / Asia/Bangkok. Định dạng mốc ghi nhận: HH:mm ngày DD/MM/YYYY.
@@ -135,7 +174,7 @@ Thư mục data/ được thêm vào .gitignore để dữ liệu thực nghiệ
 
 ### Mốc ghi nhận 08:54 ngày 09/10/2026 — Tài liệu dự án
 
-Các file được cập nhật gồm README.md, docs/ARCHITECTURE.md, docs/DATA_CONTRACT.md, docs/ROADMAP.md và docs/label-bundle.schema.json.
+Các file được cập nhật gồm README.md, docs/SYSTEM.md#architecture, docs/SYSTEM.md#data-contract, docs/ROADMAP.md và docs/label-bundle.schema.json.
 
 README mô tả luồng tạo thử nghiệm, giao nhiệm vụ, chỉnh nhãn, chốt và xem điểm; bổ sung hướng dẫn dùng hai script dữ liệu và nêu giới hạn hiện tại. ARCHITECTURE mô tả các model mới, giao dịch revision, editor và timer. DATA_CONTRACT ghi ràng buộc polygon, API Assignment, quy tắc raster hóa và giới hạn hình học/bộ nhớ.
 

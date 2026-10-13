@@ -1,5 +1,6 @@
 .env
 .venv/
+.venv-cvat/
 __pycache__/
 .pytest_cache/
 *.pyc
@@ -10,3 +11,5 @@ storage/
 !storage/.gitkeep
 *.tsbuildinfo
 data/
+
+client_secret*.json

@@ -67,3 +67,23 @@ class AnnotationEvent(SQLModel, table=True):
     kind: str
     revision: int
     created_at: datetime = Field(default_factory=now)
+
+
+class ColabJob(SQLModel, table=True):
+    id: str = Field(default_factory=uid, primary_key=True)
+    project_id: str = Field(foreign_key='project.id', index=True)
+    root: str
+    manifest: list[str] = Field(sa_column=Column(JSON, nullable=False))
+    status: str = 'waiting'
+    error: str | None = None
+    label_set_id: str | None = Field(default=None, foreign_key='labelset.id')
+    created_at: datetime = Field(default_factory=now)
+
+
+class GuidedRun(SQLModel, table=True):
+    id: str = Field(default_factory=uid, primary_key=True)
+    experiment_id: str = Field(foreign_key='experiment.id', unique=True)
+    dataset: str
+    annotator: str
+    job_id: str | None = Field(default=None, foreign_key='colabjob.id')
+    created_at: datetime = Field(default_factory=now)

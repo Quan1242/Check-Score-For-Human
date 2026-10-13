@@ -6,8 +6,8 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return response.json();
 }
-export function postJSON<T>(path: string, body: unknown) {
-  return api<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+export function postJSON<T>(path: string, body: unknown, init: RequestInit = {}) {
+  return api<T>(path, { ...init, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 }
 export function upload<T>(path: string, file: File) {
   const body = new FormData(); body.append('file', file);

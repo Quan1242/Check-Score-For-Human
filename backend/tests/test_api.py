@@ -10,6 +10,11 @@ from app import main
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
+    import asyncio
+    from app import colab_sync
+    async def idle_watch():
+        await asyncio.Event().wait()
+    monkeypatch.setattr(colab_sync, 'watch', idle_watch)
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     SQLModel.metadata.create_all(engine)
     monkeypatch.setattr(main, "STORAGE", tmp_path)

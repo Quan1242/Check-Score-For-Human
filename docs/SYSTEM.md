@@ -1,4 +1,117 @@
-# M49 — Đặc tả công thức đánh giá cho website Human vs AI Annotation Benchmark Portal
+# Quy ước hệ thống M49
+
+Tài liệu chung về kiến trúc, dữ liệu và chấm điểm. Hướng dẫn thao tác hiện tại ở [GUIDED_WORKFLOW](GUIDED_WORKFLOW.md).
+
+- [Kiến trúc và lưu trữ](#architecture)
+- [Hợp đồng dữ liệu, hình học và API](#data-contract)
+- [Công thức đánh giá](#scoring)
+
+Giao diện chỉ yêu cầu chọn tác vụ test và tên người thực hiện. Dự án/Experiment được tạo ngầm cho mỗi lượt; không có bước chọn hoặc tạo dự án thủ công. Phần công thức phân biệt tính năng đang có và chỉ số tham chiếu chưa triển khai.
+
+<a id="architecture"></a>
+
+## Kiến trúc
+
+```mermaid
+flowchart LR
+  B[Trình duyệt] --> F[React / Nginx hoặc Vite]
+  F --> A[FastAPI]
+  A --> D[(PostgreSQL / SQLite)]
+  A --> S[Ảnh và point cloud trên đĩa]
+  C[Colab: mô hình theo tác vụ] --> J[JSON theo schema M49]
+  J --> B
+```
+
+Một dự án chỉ có một tác vụ. Luồng test tự tạo dự án riêng cho mỗi lượt; điều này tránh gộp điểm 2D/mask/3D không tương đương.
+
+- `Project`: tên, task, danh sách lớp.
+- `Asset`: tên gốc duy nhất trong dự án, đường dẫn lưu UUID, kích thước ảnh hoặc point cloud.
+- `LabelSet`: một bản chụp nhãn bất biến theo API hiện tại; nguồn `ground_truth`, `ai`, `manual`, `assisted`.
+- `assisted.parent_id`: bắt buộc trỏ đến một LabelSet nguồn AI của cùng dự án.
+- `payload`: bundle có thể gồm một hoặc nhiều mẫu; một bản mới không ghi đè bản cũ.
+
+- `Experiment`: khóa ID ground truth, danh sách asset và ngưỡng IoU. Không có endpoint thay đổi cấu hình sau tạo.
+- `Assignment`: một người, một mẫu và một chế độ trong thử nghiệm; draft_id và final_id trỏ vào snapshot LabelSet. Có unique constraint theo experiment/asset/annotator/mode.
+- `AnnotationEvent`: save/resume/pause/finalize, revision và timestamp server. Chưa ghi từng thao tác hình học.
+- Ghi draft/chốt/timer dùng compare-and-swap revision trong cùng giao dịch; yêu cầu cũ bị từ chối 409. Draft tạo snapshot mới, không ghi đè AI.
+- Endpoint editor chỉ trả asset, assignment và objects từ draft/final/AI parent; không trả ground truth payload.
+- Evaluator chấm bản người đã chốt và từng AI run theo mẫu đã khóa; phân biệt kết quả thiếu với nhãn rỗng. CSV có GT ID, ngưỡng, label-set ID và missing policy.
+
+Frontend dùng React và SVG cho box/polygon, Canvas 2D để chiếu point cloud và cuboid LiDAR; không thêm dependency. History reducer dùng chung ba tác vụ. Draft autosave có debounce 900 ms; rời lượt bị chặn khi còn thay đổi, đang lưu hoặc timer chạy.
+
+Timer dùng timestamp server và heartbeat, với lease 30 giây. Editor tự pause khi ẩn tab hoặc idle; khi mất kết nối, backend chỉ tính tối đa thời gian lease còn lại. Chi tiết cách đo ở [quy trình demo](DEMO_PROTOCOL.md).
+
+Lưu trữ file và database chưa có giao dịch phân tán. API xóa file khi ghi database thất bại; chưa có tác vụ quét file mồ côi sau crash. Đây là điểm cần hoàn thiện khi triển khai thật.
+
+Ground truth tách theo source và không được nạp vào editor; API chưa xác thực/phân quyền. Cần vai trò reviewer/admin và annotator trước khi thu thập kết quả mù nhiều người.
+
+Khởi tạo database vẫn dùng create_all để tạo các bảng chưa tồn tại, không cập nhật schema bảng cũ. Thay đổi này thêm bảng mà không đổi cột ở Project/Asset/LabelSet. Alembic và kiểm tra nâng cấp trên bản sao dữ liệu còn trong ROADMAP; không xóa database đang có dữ liệu để thay migration.
+
+### Kết nối Colab cá nhân qua Google API (13/10/2026)
+
+`colab_google.py` quản lý OAuth Desktop với PKCE/state, tải dữ liệu và tạo notebook theo từng job. Quyền M49 là `drive.file`; token chỉ lưu local trong storage. Notebook dùng xác thực Google riêng của Colab, không chứa token của M49. Xem [cấu hình và vận hành](GUIDED_WORKFLOW.md#kết-nối-google-một-lần-trên-máy-local).
+
+`POST /api/guided/{id}/ai/google` chỉ nhận sau đủ 10 Manual, khóa mẫu/model vào request và xếp lượt tải lên. Worker lưu ID Drive trước khi upload để retry không trùng, chỉ xuất URL Colab sau khi đã chuẩn bị đủ ảnh/model/notebook. Trạng thái `awaiting_colab` nghĩa là chờ người dùng chạy notebook hoặc chờ kết quả, không khẳng định runtime đang chạy. Kết quả dùng tệp được ứng dụng tạo sẵn, marker ghi cuối; backend kiểm tra job/checksum/schema/mẫu trước khi nhập một lần. Lượt gắn với tài khoản gửi ban đầu, tài khoản khác không được tiếp tục tải dữ liệu của lượt đó.
+
+Không đổi schema database. `google.json` nằm cạnh bản staging của mỗi job, chứa ID Drive và tài khoản (không chứa token); backend dùng lại worker đồng bộ hiện có. Docker mount `colab/` chỉ đọc để tạo notebook. Chỉ hỗ trợ một worker local, OAuth callback cổng 8000 trên cùng máy với trình duyệt.
+
+<a id="data-contract"></a>
+
+## Hợp đồng dữ liệu M49 v1.0
+
+Schema thực thi ở `backend/app/schemas.py`; `label-bundle.schema.json` được sinh từ Pydantic. Gói JSON nội bộ **không phải** định dạng nhãn BDD100K/KITTI gốc. Cần adapter trước khi import dữ liệu thật.
+
+Mỗi bundle có:
+
+- `schema_version`: `1.0`.
+- `task`: `detection_2d`, `instance_segmentation` hoặc `detection_3d`.
+- `name`: tên bộ nhãn/lần chạy.
+- `annotator`: bắt buộc cho manual/assisted.
+- `parent_id`: ID lần chạy AI, chỉ dùng cho assisted.
+- `run`: model, checkpoint, gpu, library_version, inference_seconds, training_seconds, compute_cost_vnd; giá trị chưa đo để null.
+- `samples`: tên tệp khớp chính xác tài nguyên đã upload, objects, active_seconds (null nếu chưa đo).
+
+Một đối tượng có id duy nhất trong mẫu, category trong danh sách lớp dự án, geometry và confidence. AI bắt buộc confidence [0,1]; nhãn người có thể để null.
+
+### Hình học
+
+- 2D: `{"kind":"bbox2d","xyxy":[x1,y1,x2,y2]}`. Pixel theo ảnh gốc, gốc góc trên trái, x sang phải, y xuống dưới. x2>x1, y2>y1. Chuyển khung sau letterbox/resize về ảnh gốc trước khi xuất.
+- Instance segmentation: `{"kind":"polygon","points":[[x,y],...]}`. Từ 3 đến 1.000 đỉnh, pixel ảnh gốc. Từ chối đỉnh trùng, tự giao/tự chạm, cạnh chồng và diện tích 0; không lặp đỉnh đầu ở cuối. Chưa hỗ trợ holes, multipart hoặc RLE. Không coi một polygon là biểu diễn đầy đủ mọi mask thực tế.
+- 3D: `{"kind":"cuboid3d","center":[x,y,z],"size_lwh":[l,w,h],"yaw":0,"frame":"lidar"}`. Mét, tâm hình học hộp, hệ LiDAR x tiến, y trái, z lên; yaw radian quanh +z. KITTI camera labels dùng quy ước khác: phải chuyển tọa độ và tâm hộp bằng calibration trước khi nhập. Adapter KITTI trong `backend/app/adapters/datasets.py` thực hiện chuyển đổi này khi nhập dữ liệu.
+
+3D gắn nhãn vào asset pointcloud. Ảnh camera có thể upload nhưng quan hệ ảnh–pointcloud–calibration chưa triển khai.
+
+### Nhãn sau sửa AI
+
+Giữ nguyên object id khi sửa tọa độ/lớp; tạo id mới khi thêm. Về sau dùng id và event log để tính edits, không tự suy diễn toàn bộ lịch sử chỉ từ hai snapshot. Backend hiện chỉ kiểm tra parent cùng dự án/source AI, chưa xác minh từng thay đổi có đúng nguồn gốc hay không.
+
+### Nhãn trống
+
+`objects: []` là mẫu đã được biểu diễn với không đối tượng. Không có sample trong bundle nghĩa là thiếu kết quả cho mẫu đó. Bộ chấm giữ mẫu thiếu ở báo cáo completion, loại khỏi metric với missing_policy công khai; không tự chuyển thành nhãn rỗng.
+
+### Bổ sung ngày 2026-10-09
+
+Cấu trúc bundle vẫn là v1.0; bổ sung ràng buộc polygon như trên. Experiment/Assignment được lưu riêng, không nhét thêm trường vào bundle.
+
+- POST `/api/projects/{id}/experiments`: name, ground_truth_id, asset_ids, iou_threshold (0 < ngưỡng <= 1). Mỗi asset phải có sample trong ground truth, kể cả objects rỗng.
+- POST `/api/experiments/{id}/assignments`: asset_id, annotator, mode manual/assisted, parent_id chỉ với assisted. Parent AI phải có sample tương ứng.
+- GET `/api/assignments/{id}/editor`: assignment, asset và objects; không có ground truth payload.
+- POST `/api/assignments/{id}/draft`: revision hiện tại và objects. Server tự xác định asset/task/annotator/parent từ assignment, trả revision mới.
+- POST `/api/assignments/{id}/finalize`: revision; yêu cầu có draft trước đó. Final trỏ vào draft hiện tại và bất biến qua API này.
+- POST `/api/assignments/{id}/events`: revision, kind resume/pause. GET cùng đường dẫn để đọc event log. Thời gian kết thúc phiên ở Assignment là nguồn chuẩn cho báo cáo, còn active_seconds trong bundle là snapshot tại lúc save.
+- GET `/api/experiments/{id}/score` và `/results.csv`: metric M49; null hiển thị N/A. Không gọi các kết quả này là COCO/KITTI official.
+
+Segmentation raster hóa ở độ phân giải ảnh gốc bằng quy tắc tâm pixel (x+0.5,y+0.5), even/odd scanline; giao điểm/cạnh dùng khoảng nửa mở để tránh đếm đôi. Mask instance rỗng bị từ chối khi chấm. IoU mask dùng giao/hợp pixel, Dice của cặp ghép = 2*IoU/(1+IoU).
+
+IoU 3D dùng giao hai hình chữ nhật đáy đã xoay yaw, nhân phần giao chiều cao. Không hỗ trợ pitch/roll, không dùng BEV thay cho 3D.
+
+Giới hạn demo ngày 10/10/2026: lưu draft vẫn tối đa 300 đối tượng, nhưng bộ chấm chỉ nhận tối đa 80 đối tượng mỗi phía/mẫu; mask tối đa 4 triệu pixel/ảnh và 32 triệu pixel tổng kích thước mask/mẫu. Mỗi thử nghiệm tối đa 20 mẫu; chấm tối đa 40 Assignment và 3 AI run/dự án. Viewer đọc BIN little-endian x,y,z,intensity và PCD ASCII/binary không nén, chỉ lấy mẫu tối đa 60.000 điểm để hiển thị; vẫn đọc tệp gốc vào bộ nhớ và không thay đổi file đó.
+
+Timer nhận resume/pause/heartbeat qua endpoint events, cùng cơ chế revision. Heartbeat tích lũy thời gian rồi gia hạn lease 30 giây; lease hết hạn không tự chạy lại khi heartbeat đến muộn, cần resume. Response Assignment thêm timer_remaining_seconds. Không tạo event log cho từng heartbeat để giảm số bản ghi. Chi tiết cách đo và giới hạn ở DEMO_PROTOCOL.md.
+
+<a id="scoring"></a>
+
+## M49 — Đặc tả công thức đánh giá cho website Human vs AI Annotation Benchmark Portal
 
 **Phiên bản:** 2.4 — sửa toàn bộ lỗi hiển thị từ bản công thức LaTeX đính kèm  
 **Ngày:** 08/10/2026  
@@ -7,7 +120,7 @@
 
 > **Quy ước đọc công thức:** Dấu **×** là phép nhân; **÷** hoặc **/** là phép chia; **∑** là tổng; **∩** là giao; **∪** là hợp; **|A|** là số phần tử, diện tích hoặc thể tích tùy ngữ cảnh; **≈** là xấp xỉ. **N/A** nghĩa là không xác định hoặc không áp dụng, không được tự chuyển thành 0 hay 1. Dấu phẩy trong số thập phân dùng theo cách viết tiếng Việt (ví dụ: 0,50).
 
-## 1. Mục tiêu và phạm vi đánh giá của website
+### 1. Mục tiêu và phạm vi đánh giá của website
 
 **M49 là một website**, không phải chương trình dòng lệnh hay phần mềm chấm điểm chạy độc lập. Các công thức trong tài liệu là **quy tắc tính điểm mà website cần áp dụng** khi người dùng chọn bộ dữ liệu và so sánh các bản nhãn. Website phải thể hiện kết quả bằng giao diện trực quan và báo cáo, đồng thời giữ lại thông tin về cấu hình đánh giá.
 
@@ -20,7 +133,7 @@ M49 có **hai nhóm kết quả đánh giá tách biệt**:
 
 Chất lượng hình học, độ đầy đủ của nhãn, thời gian và chi phí là **các trục đánh giá riêng**. Không gộp thành điểm tổng khi chưa chốt trọng số.
 
-### Ký hiệu cơ bản
+#### Ký hiệu cơ bản
 
 | Ký hiệu | Ý nghĩa |
 |---|---|
@@ -40,7 +153,7 @@ Chất lượng hình học, độ đầy đủ của nhãn, thời gian và chi
 
 **Yêu cầu hiển thị trên website:** khi một chỉ số không xác định, giao diện hiện **N/A** cùng lý do; không tự thay bằng 0 hoặc 100%. Website phải hiển thị ngưỡng IoU, loại hình học (2D/mask/3D), phạm vi mẫu, số cặp ghép và số lượng mẫu thiếu bên cạnh kết quả tương ứng.
 
-## 2. IoU của bounding box 2D
+### 2. IoU của bounding box 2D
 
 Hai hộp **A = (aₓ₁, aᵧ₁, aₓ₂, aᵧ₂)** và **B = (bₓ₁, bᵧ₁, bₓ₂, bᵧ₂)** dùng tọa độ liên tục trên ảnh gốc, với x₁ < x₂ và y₁ < y₂.
 
@@ -63,7 +176,7 @@ Diện tích phần giao và diện tích từng hộp:
 
 Không cộng 1 vào chiều rộng/chiều cao trong hệ tọa độ liên tục; hình chữ nhật có diện tích không dương là dữ liệu không hợp lệ. [S1–S2]
 
-## 3. Instance segmentation: Mask IoU và Dice
+### 3. Instance segmentation: Mask IoU và Dice
 
 A và B là hai tập pixel foreground của **hai instance** đang được so sánh. Gọi **I = |A ∩ B|** là số pixel phần giao, **U = |A ∪ B|** là số pixel phần hợp.
 
@@ -82,7 +195,7 @@ Quan hệ giữa hai chỉ số (khi mẫu số hợp lệ):
 
 Không thay mask IoU bằng IoU của bounding box. Nếu cả hai mask rỗng thì có phép chia 0/0, không tự cho điểm 1. Mask rỗng của một instance là lỗi dữ liệu; trường hợp ảnh không có instance được xử lý ở cấp tập đối tượng. Cần thống nhất kích thước mask và quy tắc raster hóa. [S1], [S3]
 
-## 4. Bounding box 3D chỉ xoay yaw quanh trục đứng
+### 4. Bounding box 3D chỉ xoay yaw quanh trục đứng
 
 **Quy ước M49:** mỗi hộp được biểu diễn bởi tâm (cₓ, cᵧ, c_z), chiều dài l, chiều rộng w, chiều cao h và góc yaw θ. Tâm là **tâm hình học**, trục z hướng lên, l/w/h > 0 và đo bằng mét, θ đo bằng radian. Hộp không có pitch hoặc roll.
 
@@ -118,7 +231,7 @@ Chiều cao và thể tích phần giao:
 
 Công thức trên đúng với hộp cùng trục đứng chỉ xoay yaw; nếu có pitch/roll phải tính giao khối đa diện tổng quát. Quy ước tọa độ camera của KITTI khác LiDAR và phải được chuyển đổi chính xác. **BEV IoU không tương đương IoU 3D.** [S5–S7]
 
-### Sai số hình học 3D bổ sung
+#### Sai số hình học 3D bổ sung
 
 Với cặp ghép dự đoán p và ground truth g:
 
@@ -138,7 +251,7 @@ Sai số yaw đã xử lý vòng góc:
 
 Sai số góc nằm trong [0, π] radian. Nếu cần phân biệt đầu và đuôi xe, phải báo sai số yaw riêng: hộp hình chữ nhật quay 180° có thể giữ nguyên IoU.
 
-## 5. Ghép một–một nhãn cuối (giao thức riêng M49)
+### 5. Ghép một–một nhãn cuối (giao thức riêng M49)
 
 Ở **mỗi ảnh và mỗi lớp**, đặt Q(i, j) là IoU giữa dự đoán i và nhãn chuẩn j. Chỉ cặp có **Q(i, j) ≥ τ** mới hợp lệ.
 
@@ -164,7 +277,7 @@ Ghép chéo tạo **2 cặp** đạt ngưỡng; ghép đường chéo chỉ có 
 
 Những nghiệm đồng hạng có thể khác ID cặp nhưng phải giống số cặp tối đa và tổng IoU tối ưu. Phép ghép này **không phải phép ghép chính thức của COCO/KITTI**; dữ liệu có crowd/ignore cần quy tắc riêng. [S4]
 
-## 6. TP, FP, FN, Precision, Recall và F1 của bộ nhãn cuối
+### 6. TP, FP, FN, Precision, Recall và F1 của bộ nhãn cuối
 
 Sau khi ghép trên mỗi mẫu và lớp:
 
@@ -180,7 +293,7 @@ Sau khi ghép trên mỗi mẫu và lớp:
 
 **Kiểm tra số học:** GT = 120, prediction = 100, TP = 80, nên FP = 20 và FN = 40. Do đó **Precision = 80%**, **Recall ≈ 66,67%**, **F1 = 160/220 = 8/11 ≈ 72,73%**.
 
-### Xử lý mẫu số bằng 0 theo M49
+#### Xử lý mẫu số bằng 0 theo M49
 
 | Tình huống | Precision | Recall | F1 |
 |---|---:|---:|---:|
@@ -191,7 +304,7 @@ Sau khi ghép trên mỗi mẫu và lớp:
 
 Đối với toàn bộ dataset, **cộng TP, FP và FN trước khi tính tỷ số**, không lấy trung bình F1 theo từng ảnh. Dự đoán sai lớp có thể tạo FP ở lớp dự đoán và FN ở lớp chuẩn.
 
-### Micro-F1, macro-F1 và trung bình IoU
+#### Micro-F1, macro-F1 và trung bình IoU
 
 Tính các tổng theo lớp:
 
@@ -215,7 +328,7 @@ Phải công bố tập C′ trước (khuyến nghị gồm các lớp có GT t
 
 Nếu không có cặp ghép, chỉ số này là **N/A**. Đây là chất lượng hình học **có điều kiện trên các cặp được ghép**; phải báo kèm recall và số cặp, không dùng độc lập để xếp hạng.
 
-## 7. COCO-style AP cho bounding box và mask
+### 7. COCO-style AP cho bounding box và mask
 
 Với mỗi lớp c và ngưỡng IoU t, xếp dự đoán theo confidence giảm dần. Sau phép ghép và xử lý crowd/ignore **đúng giao thức COCO**, xét k dự đoán đầu tiên:
 
@@ -244,7 +357,7 @@ Các chỉ số báo cáo:
 
 **Kiểm tra khác biệt AP và F1:** Một ground truth có hai dự đoán trùng khung, TP có confidence cao hơn FP. AP có thể đạt 1, nhưng bộ nhãn cuối có TP = 1, FP = 1, FN = 0 nên **F1 = 2/3**. Không dùng AP để thay F1 của bộ nhãn cuối; không tạo confidence giả cho nhãn người.
 
-## 8. KITTI 3D AP-R40
+### 8. KITTI 3D AP-R40
 
 KITTI đánh giá các lớp Car, Pedestrian và Cyclist ở ba mức **Easy / Moderate / Hard**. Ngưỡng overlap 3D được công bố: **Car = 0,70; Pedestrian = 0,50; Cyclist = 0,50**. Không gắn nhãn “KITTI official” cho ngưỡng tự chọn đối với Bus/Truck. [S7–S8]
 
@@ -256,7 +369,7 @@ Trong đó p(r) là precision nội suy theo cách lấy mẫu và xử lý scor
 
 KITTI dùng 40 vị trí recall **không tính mốc 0**, thay cho cách AP11 cũ. Tuy nhiên score threshold, matching, difficulty, ignored classes, nội suy và phép so sánh overlap phải đúng evaluator; **không thể lấy COCO AP rồi chỉ thay 101 bằng 40**. Công thức trên là mô tả khái niệm, không thay thế triển khai KITTI chính thức. [S7–S8]
 
-## 9. Tỷ lệ hoàn thành và dữ liệu thiếu
+### 9. Tỷ lệ hoàn thành và dữ liệu thiếu
 
 Với N mẫu được giao, n mẫu đã hoàn thành:
 
@@ -264,7 +377,7 @@ Với N mẫu được giao, n mẫu đã hoàn thành:
 
 Mẫu **đã hoàn thành và không có đối tượng** khác với mẫu **chưa hoàn thành hoặc lỗi xử lý**. Không bỏ âm thầm mẫu khó khỏi mẫu số. Cần công bố tỷ lệ bao phủ, số lỗi và chính sách xử lý kết quả thiếu; chỉ coi missing là dự đoán rỗng khi giao thức đã quy định từ trước.
 
-## 10. Đo thời gian
+### 10. Đo thời gian
 
 Với các khoảng làm việc chủ động hợp lệ, không chồng lấn, khoảng thứ k bắt đầu tại s(k), kết thúc tại e(k):
 
@@ -279,7 +392,7 @@ Nếu khoảng thời gian chồng lấn, phải tính **độ dài hợp của 
 
 Thời gian phân bổ mỗi mẫu không nhất thiết là latency của một request. Khi đo AI phải nói rõ phạm vi: tải mô hình, warm-up, tiền xử lý, inference, hậu xử lý, truyền dữ liệu; không gộp huấn luyện vào inference. Chỉ so sánh khi phần cứng, batch size, kích thước đầu vào và phạm vi đo tương đương.
 
-### Tiết kiệm thời gian nhân công và thời gian tuần tự
+#### Tiết kiệm thời gian nhân công và thời gian tuần tự
 
 Ký hiệu T(manual) là thời gian nhân công gán nhãn thủ công, T(assisted) là thời gian nhân công kiểm tra/sửa nhãn AI, T(AI) là thời gian tạo nhãn AI.
 
@@ -292,7 +405,7 @@ Khi AI tạo nhãn **trước**, sau đó con người sửa **tuần tự**:
 
 Nếu công việc chạy đồng thời, phải đo thời gian hoàn thành thực tế, không cộng thời lượng rồi gọi là wall-clock. Mẫu số 0 cho **N/A**. Tiết kiệm âm nghĩa là chậm hơn, không ép thành 0.
 
-## 11. Mức độ chỉnh sửa nhãn AI
+### 11. Mức độ chỉnh sửa nhãn AI
 
 Đối với tập nhãn AI gốc đã khóa, định nghĩa:
 
@@ -314,7 +427,7 @@ Nếu mỗi nhãn AI ban đầu chỉ nằm trong một trong hai nhóm **giữ 
 
 Nhãn mới thêm không thuộc mẫu số nhãn AI ban đầu. Số thao tác chuột/phím không nhất thiết bằng số nhãn bị thay đổi. Khi mẫu số 0, chỉ số tương ứng là **N/A**.
 
-## 12. Chi phí và điều kiện quyết định
+### 12. Chi phí và điều kiện quyết định
 
 Ký hiệu r(h) là đơn giá nhân công/giờ, r(g) là đơn giá tính toán GPU/giờ, các chi phí khác sử dụng cùng đơn vị tiền.
 
@@ -339,7 +452,7 @@ Không cộng trùng tổng chi phí huấn luyện và chính phần phân bổ
 
 Đây là **ngưỡng quyết định do M49 đặt ra**, không phải ngưỡng chính thức của COCO hoặc KITTI.
 
-## 13. Tổng hợp kết quả và tự kiểm tra
+### 13. Tổng hợp kết quả và tự kiểm tra
 
 **Trên trang Kết quả của website M49**, bảng so sánh chính phải dùng cùng benchmark, tách theo phương pháp, lớp và loại hình học; báo số mẫu giao/hoàn thành, TP, FP, FN, Precision, Recall, F1(micro), IoU trung bình của cặp ghép và số cặp ghép. Thời gian lao động, thời gian AI, chi phí và tỷ lệ sửa/thêm/xóa phải là **các nhóm thông tin riêng**. COCO/KITTI AP cần hiển thị **ở bảng đánh giá detector riêng**, không trộn vào F1 của nhãn cuối.
 
@@ -347,7 +460,7 @@ Không cộng trùng tổng chi phí huấn luyện và chính phần phân bổ
 
 Nếu tính khoảng tin cậy cho chênh lệch chất lượng hoặc tiết kiệm, đơn vị tái lấy mẫu phải phù hợp tính độc lập của dữ liệu (ảnh hoặc cụm cảnh/video); với thiết kế paired phải giữ nguyên cặp kết quả giữa các phương pháp. Công bố cách lấy mẫu và số lần lặp.
 
-### Bảng tự kiểm tra số học
+#### Bảng tự kiểm tra số học
 
 | Phép kiểm tra | Kết quả kỳ vọng |
 |---|---|
@@ -362,7 +475,7 @@ Nếu tính khoảng tin cậy cho chênh lệch chất lượng hoặc tiết k
 | GT và prediction đều rỗng | F1 và IoU cặp ghép là N/A, không mặc định 1 |
 | Assisted tốn chi phí cao hơn manual | Tỷ lệ tiết kiệm chi phí âm |
 
-## 14. Kết quả đối chiếu và giới hạn xác minh
+### 14. Kết quả đối chiếu và giới hạn xác minh
 
 | Nội dung | Kết luận | Mức bằng chứng |
 |---|---|---|
@@ -375,7 +488,7 @@ Nếu tính khoảng tin cậy cho chênh lệch chất lượng hoặc tiết k
 
 **Giới hạn bằng chứng:** tài liệu gốc nhắc tới 19 nhóm kiểm thử tổng hợp, 1.000 cặp bounding box và 300 ma trận matching nhưng không kèm toàn bộ fixture, log và kết quả chạy để xác minh độc lập. Phiên bản này không tuyên bố đã chạy lại những kiểm thử đó; cũng không chứng minh các màn hình của website M49 đã tích hợp đầy đủ phần tính toán đánh giá, đã chạy KITTI AP-R40 end-to-end hoặc có số liệu chi phí thực.
 
-## 15. Tài liệu đối chiếu định nghĩa và giao thức
+### 15. Tài liệu đối chiếu định nghĩa và giao thức
 
 - **[S1] COCO API:** https://github.com/cocodataset/cocoapi
 - **[S2] COCO evaluation protocol (COCOeval):** https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocotools/cocoeval.py

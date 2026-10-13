@@ -1,81 +1,91 @@
-﻿# Những việc cần làm tiếp
+﻿# Roadmap demo một người
 
-Cập nhật lúc **09:13 ngày 09/10/2026 (giờ Việt Nam, UTC+7)**.
+## Cập nhật 12/10/2026 — BDD100K, KITTI và Drive
 
-Đã có code cho vẽ khung 2D, vẽ vùng đối tượng bằng đa giác, chỉnh hộp 3D, lưu nhãn và chấm điểm. **Các phần này chưa được chạy thử nên chưa xác nhận hoạt động đúng.** Chi tiết thay đổi nằm trong [báo cáo trước khi push](VALIDATION.md).
+- [x] Nhập BDD100K box 2D, KITTI box 2D/cuboid 3D từ thư mục, chọn 1–20 mẫu và lớp; rollback khi lỗi.
+- [x] Timer tự bắt đầu khi mở nhiệm vụ, tính cả quan sát; không dùng thời gian nhập tay để kết luận tăng tốc.
+- [x] Xuất lượt AI qua Drive, notebook 2D/segmentation xuất tự động, backend polling/checksum/validation và chống nhập trùng.
+- [x] 49 test backend, 5 test frontend và build đạt.
+- [ ] Người dùng tải dataset và cấu hình Drive; thử toàn luồng với dữ liệu thật.
+- [ ] Chạy inference Colab/GPU và kiểm duyệt UI thực tế.
+- [ ] Model inference KITTI 3D; adapter segmentation BDD100K và KITTI AP chính thức chưa có.
 
-Danh sách dưới đây chỉ ghi việc còn lại. Phần ghi **Bạn thực hiện** là dữ liệu, chạy thử và kiểm duyệt đang đợi bạn. Phần ghi **Cần viết thêm code** là chức năng chưa làm xong.
+Chi tiết: [DATASETS_COLAB](DATASETS_COLAB.md). Phần này được ưu tiên hơn checklist lịch sử bên dưới.
 
-## 1. Chạy thử bản hiện tại trước
+## Cập nhật segmentation/3D
 
-**Bạn thực hiện:**
+- [x] Python 3.14: 41 test backend đạt, gồm COCO segmentation và nhiệm vụ segmentation/3D.
+- [x] Frontend build và 5 test hình học cuboid đạt.
+- [x] COCO ZIP polygon đơn: xuất AI, nhập Manual/Assisted, chốt và chấm IoU/Dice.
+- [x] Cuboid: kéo tâm, resize và yaw bằng chuột ở góc Trên/Trước/Bên.
+- [x] Viết pipeline Colab YOLO11s-seg, dùng validator backend; chưa chạy inference thực tế.
+- [ ] Kiểm duyệt thao tác giao diện (chưa có trình duyệt kết nối với công cụ).
+- [ ] Chạy notebook segmentation trên GPU/pilot thật.
+- [ ] AI 3D, KITTI/calibration; brush/RLE/multipart vẫn chưa triển khai.
 
-- [ ] Chuẩn bị môi trường chạy: Python, Node.js và pnpm theo README. Nếu thêm thư viện trong file DOCX, cần kiểm tra phiên bản có tương thích với dự án hay không.
-- [ ] Chạy kiểm tra backend bằng `python -m pytest -q` trong thư mục `backend`. Đây là bước kiểm tra các API và logic đã có test.
-- [ ] Chạy `pnpm build` trong thư mục `frontend` để kiểm tra code giao diện có biên dịch được không.
-- [ ] Mở ứng dụng và thử cả ba loại dự án: khung 2D, vùng đối tượng và hộp 3D. Thử thêm, sửa, xóa, hoàn tác, lưu tự động và tải lại trang để kiểm tra nhãn còn nguyên.
-- [ ] Thử tạo nhiệm vụ, sửa nhãn AI, chốt bản cuối và xem kết quả. Kiểm tra bản AI ban đầu không bị thay đổi.
-- [ ] Kiểm tra chạy bằng Docker với PostgreSQL. Nếu đã có database cũ, thử trên bản sao để xác nhận dữ liệu cũ được giữ lại.
+Xem [hướng dẫn sử dụng](../README.md). Kế hoạch ngày 10/10 phía dưới được giữ làm lịch sử;
+trạng thái mới ở trên được ưu tiên khi có khác biệt.
 
-**Kết quả cần có:** biết ứng dụng chạy được đến đâu và ghi lại lỗi thực tế cần sửa. Test cũ chưa bao phủ toàn bộ phần code mới.
+Cập nhật kế hoạch ban đầu ngày **10/10/2026 (UTC+7)**.
 
-## 2. Chuẩn bị dữ liệu thật và kiểm tra điểm
+## Phạm vi
 
-**Bạn thực hiện:**
+Ứng dụng dùng để **một người chạy demo trên máy cá nhân**, thao tác lần lượt với manual, AI và assisted. Mục tiêu là minh họa luồng nhập dữ liệu → gán nhãn → lưu/chốt → so sánh điểm và thời gian trên bộ mẫu nhỏ. Kết quả phục vụ demo, chưa đại diện cho nghiên cứu nhiều người.
 
-- [ ] Chọn ảnh cho 2D/segmentation và dữ liệu đám mây điểm cho 3D. Chốt các lớp cần gán nhãn, ví dụ xe con, xe tải và người đi bộ.
-- [ ] Chuẩn bị nhãn chuẩn để làm đáp án chấm điểm. Nhãn chuẩn còn gọi là ground truth.
-- [ ] Lập danh sách mẫu dùng thử và mẫu dùng cho thí nghiệm chính thức. Lưu lại cách chia dữ liệu để có thể chạy lại cùng thí nghiệm sau này.
-- [ ] Nếu dùng BDD100K, kiểm tra file JSON do script chuyển đổi tạo ra: đúng ảnh, đúng lớp và đúng tọa độ. Chốt cách xử lý đối tượng bị che, bị cắt ở mép ảnh hoặc được đánh dấu bỏ qua.
-- [ ] Chọn vài mẫu nhỏ và tính tay để đối chiếu bộ chấm: khung trùng nhau, khung lệch nhau, thừa/thiếu đối tượng và sai lớp.
-- [ ] Với segmentation, kiểm tra vùng pixel được tô và điểm IoU/Dice. Với 3D, kiểm tra hộp có góc xoay và độ cao khác nhau. IoU/Dice là các chỉ số đo mức độ trùng khớp giữa nhãn và đáp án.
-- [ ] Kiểm tra cách ghép đối tượng: ưu tiên ghép được nhiều cặp đúng ngưỡng nhất, rồi mới chọn cách có tổng IoU cao nhất. Trường hợp không tính được điểm phải hiện N/A.
-- [ ] Chạy thử một nhóm mẫu nhỏ cho từng tác vụ với manual, AI và assisted; ghi lỗi và duyệt kết quả trước khi dùng cho báo cáo chính thức.
+Đã có code cho box 2D, polygon segmentation, cuboid 3D, lưu nhãn và chấm điểm. **Chưa xác nhận các phần này chạy đúng bằng test/build và thử giao diện.** Chi tiết implementation trước đó nằm trong [báo cáo thay đổi](VALIDATION.md).
 
-**Kết quả cần có:** bộ dữ liệu đã chốt và một số đáp án tính tay để biết bộ chấm có tính đúng hay không.
+## 1. Cách chạy demo để giảm tải máy
 
-## 3. Nâng cấp công cụ gán nhãn
+- Chạy trực tiếp backend với SQLite và frontend theo README. Docker/PostgreSQL là tùy chọn, không bắt buộc.
+- Chỉ chạy một backend worker, một người thao tác và một tab gán nhãn; làm từng tác vụ, không chấm nhiều thử nghiệm cùng lúc.
+- Bắt đầu với 3–5 mẫu nhỏ cho mỗi tác vụ cần trình diễn; chỉ tăng sau khi quan sát RAM/CPU và độ phản hồi. Đây là quy mô khởi đầu, không phải mức tải đã được kiểm chứng.
+- Dùng ảnh vừa phải và point cloud BIN hoặc PCD ASCII/binary nhỏ. Viewer hiện lấy mẫu tối đa 60.000 điểm để vẽ; giới hạn này không giới hạn dung lượng tệp phải đọc vào bộ nhớ.
+- Chạy AI riêng trên Colab hoặc dùng kết quả AI thật đã xuất sẵn rồi nhập JSON. Không tải model, train hoặc chạy inference trong backend trên máy cá nhân.
+- Upload hiện giới hạn 32 MiB mỗi tệp. Đây không phải bảo đảm tổng RAM thấp; vẫn cần chọn dữ liệu nhỏ và kiểm tra tải thực tế.
 
-**Cần viết thêm code:**
+Một backend worker và một người là phạm vi vận hành; chưa có khóa đăng nhập một người hay giới hạn tổng RAM. Đã thêm giới hạn chấm trong mục 3, còn chờ bạn kiểm tra thực tế.
 
-- [ ] **Segmentation:** cho phép tô bằng cọ, tạo vùng có lỗ hoặc một đối tượng gồm nhiều vùng rời nhau. Hiện chỉ vẽ được một đa giác liền; cần bổ sung cách lưu mask như RLE nếu chọn định dạng này.
-- [ ] **3D:** cho phép kéo, đổi kích thước và xoay hộp trực tiếp bằng chuột. Hiện phải nhập tâm, kích thước và góc xoay vào các ô số.
-- [ ] **Đám mây điểm lớn:** đọc được PCD dạng nén và cải thiện tốc độ hiển thị. Hiện viewer chỉ lấy mẫu tối đa 60.000 điểm để vẽ.
-- [ ] **Ghép ảnh camera với LiDAR:** đọc thông số căn chỉnh của KITTI để một hộp 3D xuất hiện đúng vị trí trên ảnh. Đồng thời chuyển đúng tọa độ, tâm hộp và góc xoay giữa hai hệ.
-- [ ] **Bộ đếm thời gian:** tự nhận biết lúc người dùng ngừng thao tác, mất mạng hoặc đóng trang đột ngột. Hiện người dùng phải bấm tạm dừng để tránh thời gian tiếp tục tăng.
+## 2. Việc cần làm trước khi demo
 
-## 4. Kết nối AI tạo nhãn thật
+**Kiểm tra và sửa lỗi:**
 
-**Bạn chọn dữ liệu và phần cứng; sau đó cần viết thêm code:**
+- [ ] Chạy `python -m pytest -q` trong `backend` và `pnpm build` trong `frontend`; sửa lỗi phát hiện được.
+- [ ] Bổ sung test cho Experiment/Assignment: lưu nháp, chốt nhãn, xung đột revision và giữ nguyên bản AI gốc.
+- [ ] Bổ sung test bộ chấm: trùng/lệch hình, thừa/thiếu đối tượng, sai lớp, matching và N/A; kiểm tra mask segmentation và hộp 3D có yaw.
+- [ ] Một người thử lần lượt các tác vụ cần trình diễn: thêm/sửa/xóa, undo/redo, autosave, tải lại trang, chốt nhãn, xem kết quả và xuất CSV.
+- [ ] Quan sát RAM/CPU khi tải dữ liệu và tính điểm bộ mẫu demo. Nếu chậm hoặc tốn bộ nhớ, giảm số mẫu/kích thước dữ liệu trước khi mở rộng chức năng.
 
-- [ ] Chọn model phù hợp cho từng tác vụ và GPU sẽ dùng. Ghi cố định phiên bản model, file trọng số và thư viện để có thể chạy lại cùng kết quả.
-- [ ] Hoàn thiện notebook Colab để model thực sự tạo nhãn 2D, segmentation và 3D. Các notebook hiện mới là khung, chưa chạy model.
-- [ ] Viết bộ chuyển đổi nhãn segmentation từ bộ dữ liệu được chọn sang định dạng ứng dụng. Công cụ chuyển đổi phải phù hợp phiên bản của bộ dữ liệu đó.
-- [ ] Xuất kết quả AI đúng tọa độ ảnh gốc hoặc hệ LiDAR trước khi nhập vào ứng dụng.
-- [ ] Đo riêng thời gian tải model, chạy khởi động, dự đoán, xử lý kết quả và huấn luyện; không gộp tất cả thành thời gian dự đoán.
+**Chuẩn bị dữ liệu:**
 
-## 5. Bổ sung báo cáo so sánh
+- [ ] Chọn bộ mẫu nhỏ, lớp đối tượng và ground truth; lưu danh sách mẫu dùng demo.
+- [ ] Chuẩn bị nhãn AI thật ở định dạng M49. Nếu chưa có kết quả model, dùng dữ liệu tổng hợp trong `examples/` để thử luồng và ghi rõ đó là dữ liệu tổng hợp.
+- [ ] Đối chiếu vài đáp án tính tay với điểm hệ thống. Nếu dùng converter BDD100K, kiểm tra tên ảnh, lớp và tọa độ đầu ra.
 
-**Cần viết thêm code:**
+**Kết quả cần có:** một người hoàn thành được luồng demo trên máy cá nhân, nhãn được lưu đúng và điểm khớp các mẫu kiểm tra.
 
-- [ ] Thêm cách chấm AI theo chuẩn COCO và KITTI nếu cần so sánh với kết quả công bố của các model. Phải xử lý đúng điểm tin cậy, đối tượng bỏ qua, đám đông và mức độ khó; điểm M49 hiện tại chưa thay thế các chuẩn này.
-- [ ] Tổng hợp kết quả của từng lớp trên toàn thử nghiệm, ví dụ điểm riêng của xe con và người đi bộ. Bổ sung macro-F1, tức trung bình F1 giữa các lớp theo quy tắc đã chọn.
-- [ ] Cho người duyệt xem nhãn chuẩn và nhãn cần chấm chồng lên nhau để tìm lỗi bằng mắt.
-- [ ] Thống kê có bao nhiêu nhãn AI được giữ nguyên, sửa, xóa và bao nhiêu đối tượng được thêm mới. Cần ghi lịch sử chi tiết hơn; hiện mới ghi các lần lưu, chạy/dừng timer và chốt nhãn.
-- [ ] Cho nhập đơn giá nhân công, giá thuê GPU và cách phân bổ chi phí huấn luyện để so sánh chi phí giữa các phương pháp.
-- [ ] Xuất báo cáo ngoài CSV, kèm danh sách mẫu và cấu hình chấm để người khác có thể chạy lại. Bổ sung khoảng tin cậy để thể hiện mức độ bất định của kết quả thống kê.
+## 3. Code ưu tiên đã bổ sung, chờ bạn test
 
-## 6. Hoàn thiện trước khi dùng lâu dài hoặc nhiều người
+- [ ] **Kiểm tra timer:** đã code heartbeat 10 giây, lease 30 giây, pause khi ẩn tab/idle 60 giây và yêu cầu bật timer trước khi sửa nhãn. Không đổi schema database.
+- [ ] **Kiểm tra giới hạn tải:** đã code tối đa 20 mẫu/thử nghiệm, 40 nhiệm vụ khi chấm, 3 AI run/dự án và một yêu cầu chấm trong mỗi backend process. Bộ chấm giới hạn 80 đối tượng mỗi phía và giảm ngân sách mask. Cần bạn đo RAM/CPU; chưa bảo đảm máy luôn đủ tải.
+- [ ] **Kiểm tra so sánh thời gian:** đã code ghép cùng ảnh/cùng người, thời gian tiết kiệm, tỷ lệ tăng tốc và trạng thái đạt/chưa đạt; CSV có các cột so sánh. Mục tiêu là assisted nhanh hơn tổng thể, F1 không thấp hơn từng ảnh. Kết quả không được ép luôn đạt; chưa bao gồm thời gian AI/nhập dữ liệu trong tổng thời gian người.
+- [ ] **Kiểm tra thao tác nhanh:** đã thêm Lưu và chốt một lần, kể cả giữ nguyên AI, cùng phím Delete/Undo/Redo.
+- [ ] **Chạy notebook 2D:** đã có YOLO11s trên Colab, pin Ultralytics, ghi hash checkpoint và thời gian riêng; chưa chạy kiểm chứng. Segmentation/3D còn template, chỉ tích hợp khi chọn demo các tác vụ đó.
+- [ ] **Chuẩn bị mẫu:** đã có script chọn 20 ảnh phân tầng và 3 ảnh pilot, xuất manifest/lịch hai lượt. Bạn chọn dữ liệu ứng viên và chạy script theo [quy trình demo](DEMO_PROTOCOL.md).
 
-**Cần viết thêm code:**
+Giữ editor hiện có: polygon đơn cho segmentation và nhập tâm/kích thước/yaw cho cuboid. Báo cáo M49 và CSV hiện có là đầu ra mục tiêu của demo sau khi kiểm tra đúng; chưa yêu cầu COCO/KITTI AP chính thức.
 
-- [ ] Bổ sung Alembic để nâng cấp cấu trúc database mà vẫn giữ dữ liệu cũ. Hiện create_all chỉ tạo bảng còn thiếu, không nâng cấp bảng đã tồn tại.
-- [ ] Bổ sung nhập file ZIP có kiểm tra đường dẫn an toàn và hiển thị tiến trình tải lên.
-- [ ] Bổ sung sao lưu dữ liệu và dọn file đã lưu trên đĩa nhưng không còn bản ghi trong database.
-- [ ] Phân quyền: người gán nhãn không được xem đáp án chuẩn; người quản lý/người duyệt mới được truy cập. Đồng thời sắp xếp nhiệm vụ để người tham gia không nhớ đáp án từ lượt làm trước.
+## 4. Tạm hoãn ngoài phạm vi demo
 
-**Bạn kiểm duyệt sau khi có code:** thử nâng cấp trên bản sao database, kiểm tra quyền truy cập và duyệt quy trình trước khi dùng với dữ liệu thật hoặc nhiều người.
+Các mục này chưa hoàn thành nhưng không chặn demo một người:
 
-## Thứ tự ưu tiên
+- Đăng nhập, phân quyền, quản lý nhiều người, giao nhiệm vụ đồng thời và tổ chức benchmark mù.
+- Docker/PostgreSQL bắt buộc, tối ưu nhiều người truy cập và kiểm thử tải lớn.
+- Brush, mask có lỗ/nhiều vùng, RLE; gizmo kéo/resize/xoay 3D; PCD nén và camera–LiDAR calibration.
+- COCO/KITTI AP, macro-F1 toàn thử nghiệm, hiển thị nhãn chuẩn chồng lên nhãn chấm, thống kê sửa nhãn chi tiết, chi phí, khoảng tin cậy và báo cáo nâng cao ngoài CSV.
+- Nhập ZIP, tự động sao lưu và dọn file thừa; Alembic khi chưa cần thay đổi cấu trúc database.
 
-Trước mắt làm **mục 1 và 2** để biết bản hiện tại chạy ra sao và có tính đúng điểm không. Sau đó sửa lỗi phát hiện được, bổ sung công cụ còn thiếu ở **mục 3**, rồi kết nối AI ở **mục 4**. Các phần báo cáo nâng cao ở **mục 5** làm theo nhu cầu thí nghiệm. **Mục 6** cần hoàn thiện trước khi dùng lâu dài hoặc tổ chức cho nhiều người tham gia.
+Nếu cần giữ dữ liệu demo, dừng backend rồi sao chép database SQLite và thư mục lưu tệp trước khi thay đổi cấu trúc dữ liệu. `create_all` hiện không nâng cấp bảng cũ; khi thay đổi schema phải có cách chuyển dữ liệu hoặc tạo database demo mới, không tự xóa dữ liệu đang có.
+
+## Thứ tự thực hiện
+
+Bạn chạy test/build và thử 3–5 mẫu → sửa lỗi được báo → chạy notebook trên pilot, chốt cấu hình và 20 mẫu → đo manual/assisted theo lịch → xem mục tiêu thời gian có đạt không. Kiểm tra chi tiết ở [DEMO_PROTOCOL](DEMO_PROTOCOL.md). Ưu tiên thời gian, không triển khai báo cáo chi phí cho demo này.

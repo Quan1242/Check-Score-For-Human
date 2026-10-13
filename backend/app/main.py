@@ -1,4 +1,6 @@
 import json
+import asyncio
+from contextlib import suppress
 import os
 from contextlib import asynccontextmanager
 from io import BytesIO
@@ -22,7 +24,14 @@ MAX_FILE_BYTES = 32 * 1024 * 1024
 @asynccontextmanager
 async def lifespan(app):
     init_db()
-    yield
+    from .colab_sync import watch
+    worker = asyncio.create_task(watch())
+    try:
+        yield
+    finally:
+        worker.cancel()
+        with suppress(asyncio.CancelledError):
+            await worker
 
 app = FastAPI(title="M49 Annotation Benchmark API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(","), allow_methods=["*"], allow_headers=["*"])
@@ -203,3 +212,13 @@ def summary(project_id: str, session: Session = Depends(get_session)):
 # Imported after save_bundle so the assignment router can share validation.
 from .benchmark import router as benchmark_router
 app.include_router(benchmark_router)
+from .cvat import router as cvat_router
+app.include_router(cvat_router)
+from .datasets import router as datasets_router
+from .colab_sync import router as colab_router
+app.include_router(datasets_router)
+app.include_router(colab_router)
+from .guided import router as guided_router
+app.include_router(guided_router)
+from .colab_google import router as google_colab_router
+app.include_router(google_colab_router)

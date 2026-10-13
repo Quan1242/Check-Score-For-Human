@@ -129,11 +129,11 @@ def counts(tp, fp, fn, iou_sum=0):
 
 
 def score_sample(predictions, truth, classes, threshold, size=None):
-    if len(predictions) > 300 or len(truth) > 300:
-        raise ValueError('Tối đa 300 đối tượng/mẫu cho bộ chấm hiện tại')
+    if len(predictions) > 80 or len(truth) > 80:
+        raise ValueError('Demo giới hạn 80 đối tượng mỗi phía/mẫu; chọn mẫu nhỏ hơn')
     polygons = [o for o in predictions + truth if o['geometry']['kind'] == 'polygon']
-    if polygons and (not size or size[0]*size[1] > 25_000_000 or size[0]*size[1]*len(polygons) > 128_000_000):
-        raise ValueError('Mask vượt giới hạn bộ nhớ: tối đa 25 triệu pixel/ảnh và 128 triệu pixel cho tổng mask/mẫu')
+    if polygons and (not size or size[0]*size[1] > 4_000_000 or size[0]*size[1]*len(polygons) > 32_000_000):
+        raise ValueError('Demo mask: tối đa 4 triệu pixel/ảnh và 32 triệu pixel cho tổng mask/mẫu; chọn ảnh nhỏ hơn với nhãn đúng tọa độ')
     masks = {}
     for obj in polygons:
         mask = rasterize(obj['geometry'], size)
