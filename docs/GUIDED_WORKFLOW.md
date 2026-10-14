@@ -1,42 +1,95 @@
-# Một lượt so sánh Người / AI / Người + AI
+# Hướng dẫn sử dụng M49
 
-Màn hình mặc định là **Bắt đầu thử nghiệm**. Ba kiểu so sánh là Manual, AI và Assisted; 2D/segmentation/3D là tác vụ chọn cho một lượt.
+Cài và khởi động theo [README](../README.md). Luồng sử dụng: **10 Manual → AI trên Colab → 10 Assisted → kết quả**, một người thao tác trên máy local.
 
-1. Chọn tác vụ và nhập tên người thực hiện; không có bước chọn dự án hoặc dataset.
-2. Nhấn **Lấy ngẫu nhiên 10 ảnh và bắt đầu**. Với 2D, ứng dụng bốc 10 mẫu không lặp từ kho BDD100K + KITTI trong `data/test20`, chuẩn hóa lớp car/Car thành car, tạo dự án riêng và khóa danh sách ảnh/ground truth. Tên ảnh có tiền tố nguồn để tránh trùng. Mỗi lượt mới bốc lại; tiếp tục lượt cũ giữ nguyên mẫu. Không ép tỷ lệ nguồn hoặc độ khó cho 10 ảnh được bốc.
-3. Gán nhãn lần lượt 10 mẫu từ đầu. Timer tự đo; **Chốt và sang mẫu tiếp theo** giữ nhãn cuối và mở mẫu kế tiếp.
-4. Sau đủ 10 mẫu, bấm **Kết nối và cấp quyền Google Drive**. Chọn model **Tự chọn (YOLO11s)**, YOLO11n/s/m hoặc checkpoint `.pt` riêng (tối đa 512 MiB). Bấm **Gửi 10 ảnh và mở Colab** để đồng ý chuyển đúng ảnh gốc của lượt này và cấu hình model lên tài khoản Drive đã kết nối. Không chuyển Manual hoặc ground truth.
-5. Backend tự tải ảnh/model, tạo notebook gắn với lượt và mở Colab khi sẵn sàng. Nếu trình duyệt chặn cửa sổ mới, bấm liên kết **Mở notebook của lượt này trên Colab**. Trong Colab, bấm **Runtime → Run all** và cấp quyền bằng cùng tài khoản Google. Không tải/kéo file, mount thư mục Drive, nhập đường dẫn hoặc điền mã lượt. Notebook tự tải đúng dữ liệu, kiểm tra checksum, chạy model và gửi kết quả về các tệp Drive đã được ứng dụng chuẩn bị.
-6. Khi backend nhận đủ 10 dự đoán hợp lệ từ Drive API, giao diện tự chuyển sang Assisted. Mỗi mẫu mở bản AI gốc để người kiểm tra/sửa; kết quả Manual được giữ riêng. Chốt cả trường hợp không sửa AI.
-7. Sau mẫu Assisted thứ 10, ứng dụng tự chấm và hiện kết quả Manual, AI, Assisted. Cùng 10 mẫu, cùng lớp, cùng ngưỡng IoU và ground truth. Thời gian AI inference được hiển thị riêng; speedup so sánh thời gian người thao tác Manual/Assisted, không cộng thời gian truyền dữ liệu.
+<a id="du-lieu"></a>
 
-AI nhận **ảnh gốc**, không nhận nhãn Manual hoặc ground truth. Vì vậy ba nhánh là các kết quả độc lập hoặc sửa từ AI, không lấy nhãn người làm đầu vào AI.
+## Chuẩn bị dữ liệu
 
-Tiến độ lưu ở backend qua GuidedRun/Experiment/Assignment/ColabJob. Tải lại trang rồi chọn **Tiếp tục lượt đã lưu**. Backend từ chối gửi AI trước khi chốt đủ 10 Manual; gọi bước tiếp theo nhiều lần không tạo trùng nhiệm vụ Assisted. Giữ một backend worker như phạm vi local hiện tại.
+Repo không kèm dataset và chưa cung cấp gói tải tự động. Nhận bộ mẫu đã chuẩn bị từ người cung cấp hoặc chuẩn bị từ BDD100K/KITTI, đặt tại `data/test20/`. Có thể đặt biến môi trường `M49_TEST20_DIR` trước khi khởi động backend để dùng thư mục khác.
 
-## Phạm vi đã có
+Cấu trúc mà bộ đọc hiện tại yêu cầu:
 
-- Luồng đầy đủ hiện mở cho **2D trên BDD100K và KITTI**, từ `data/test20`. Có thể đặt `M49_TEST20_DIR` khi lưu dữ liệu ở nơi khác.
-- Segmentation hiện bị khóa trong luồng này vì bộ 10 mẫu chưa có ground truth mask/polygon. Mã nguồn notebook/editor segmentation vẫn được giữ để dùng khi có dữ liệu phù hợp.
-- BDD100K 3D chưa có LiDAR trong bộ này. KITTI 3D đã có dữ liệu/editor nhưng còn thiếu pipeline AI; chưa mở một lượt khép kín không thể hoàn thành.
-- Colab cần người dùng đăng nhập và bắt đầu runtime. Nhận kết quả, mở Assisted và chấm điểm là tự động. Chưa nghiệm thu OAuth/Drive/Colab/GPU thật; kiểm thử tự động dùng Google API giả lập.
+```text
+data/test20/
+  bdd100k_manifest.json
+  kitti_2d_manifest.json
+  segmentation_manifest.json
+  kitti_3d_manifest.json
+  bdd100k/
+    assets/<ten-anh>.jpg
+    labels.json
+  segmentation/
+    assets/<ten-anh>.jpg
+    source_annotations/<ten-anh>.jpg.json
+  kitti/training/
+    image_2/<ma-mau>.png
+    label_2/<ma-mau>.txt
+    calib/<ma-mau>.txt
+    velodyne/<ma-mau>.bin
+```
 
-Kiểm thử: 52 test backend đạt, bao gồm vòng 10 Manual → AI fixture → 10 Assisted → báo cáo ba nguồn, tiếp tục lượt, chặn gửi AI sớm, không tạo trùng và chọn/upload model. 5 test hình học frontend và build đạt. Fixture không phải kết quả inference thật.
+Mỗi manifest là JSON danh sách tên tệp, không chứa đường dẫn. KITTI 2D dùng tên PNG; KITTI 3D dùng tên BIN. Manifest không tồn tại thì nguồn đó không được đưa vào kho mẫu. Mỗi manifest có tối đa 20 tên không trùng; tác vụ cần tổng cộng ít nhất 10 mẫu hợp lệ.
 
-Tham chiếu model: [Ultralytics YOLO11](https://docs.ultralytics.com/models/yolo11/). Hướng dẫn dữ liệu/Drive: [DATASETS_COLAB](DATASETS_COLAB.md).
+- **2D:** BDD100K box2d hoặc KITTI object detection. BDD100K cần JSON danh sách frame theo định dạng gốc; lớp `car`. KITTI dùng `Car`, được đổi thành `car` khi tạo lượt.
+- **SEG:** bản BDD100K polygon chuyển đổi Supervisely; nhãn có `size`, `objects`, `classTitle`, `geometryType` và `points.exterior/interior`. Bộ đọc chỉ nhận polygon đơn hợp lệ. Box không được thay thế mask.
+- **3D:** KITTI có đủ ảnh camera, LiDAR BIN, calibration và nhãn cùng mã mẫu. Backend dùng calibration để chuyển nhãn sang hệ LiDAR và lọc phạm vi đánh giá.
+
+Bộ SEG local được lọc còn 17 ảnh; một ảnh có số box/polygon không khớp được loại nguyên mẫu khỏi manifest trước khi chạy AI. Nhãn và ảnh gốc được giữ nguyên; danh sách ban đầu và lý do nằm trong `segmentation/selection_validation.json`. Không tự bỏ đối tượng lỗi rồi coi phần còn lại là ground truth đầy đủ.
+
+Giữ ảnh gốc và tọa độ tương ứng. Chọn mẫu/cấu hình model trước khi xem kết quả đo chính; dùng pilot riêng nếu cần chỉnh confidence. Bộ mẫu nhỏ này phục vụ demo, không đại diện toàn dataset. Không lấy dự đoán của chính model đang chấm làm đáp án chuẩn.
+
+`scripts/prepare_test20.py` cần các bộ local `data/bdd100k_2d_pilot` và `data/kitti_pilot` cùng metadata/checksum tương ứng; script từ chối ghi đè bộ đã tồn tại. Nó không tự tải dữ liệu hay chuẩn bị nhãn SEG.
+
+<a id="ket-noi-google"></a>
+<a id="kết-nối-google-một-lần-trên-máy-local"></a>
 
 ## Kết nối Google một lần trên máy local
 
-1. Trong [Google Cloud Console](https://console.cloud.google.com/apis/library/drive.googleapis.com), chọn/tạo project và bật **Google Drive API**. Không cần dùng Colab Enterprise.
-2. Cấu hình **Google Auth Platform / OAuth consent screen**. Với ứng dụng External đang Testing, thêm địa chỉ Google của bạn vào **Test users**.
-3. Tại **Clients**, tạo OAuth client loại **Desktop app**, tải JSON. Trong bước AI của M49, mở **Cấu hình kết nối Google một lần** và chọn JSON đó. Không dùng service account hoặc client loại Web.
-4. Backend phải chạy trên cùng máy với trình duyệt, cổng **8000**. Callback cố định là `http://127.0.0.1:8000/api/colab/google/callback`. Luồng dùng OAuth state một lần (10 phút) và PKCE; nếu backend khởi động lại trong lúc cấp quyền thì bấm kết nối lại.
-5. Bấm kết nối và duyệt màn hình quyền Google. M49 chỉ xin `drive.file`: các tệp do ứng dụng tạo hoặc được người dùng chia sẻ với ứng dụng. Quyền Google bên trong Colab được Colab xin riêng; kiểm tra màn hình quyền trước khi đồng ý.
+1. Trong Google Cloud, chọn/tạo project và bật Google Drive API.
+2. Cấu hình OAuth consent screen. Nếu ứng dụng External đang Testing, thêm tài khoản thực hiện vào Test users.
+3. Tạo OAuth client loại **Desktop app**, tải JSON.
+4. Tại bước AI trong M49, mở **Cấu hình kết nối Google một lần** và chọn JSON đó.
+5. Bấm **Kết nối và cấp quyền Google Drive**, đăng nhập bằng tài khoản muốn chạy Colab.
 
-Client/token nằm trong `STORAGE_DIR/google-colab/`, thuộc thư mục storage đã bị loại khỏi Git. Token không trả về frontend và không chèn vào notebook. **Ngắt kết nối trên máy này** xóa token local, dừng các lần đồng bộ tiếp theo; không xóa dữ liệu Drive hoặc thu hồi quyền trong tài khoản Google. Có thể thu hồi quyền ứng dụng trong cài đặt bảo mật Google. Khi Google hết hạn/thu hồi token, kết nối lại đúng tài khoản đã gửi lượt để tiếp tục.
+Backend chạy cổng 8000 trên cùng máy với trình duyệt; callback là `http://127.0.0.1:8000/api/colab/google/callback`. M49 dùng quyền `drive.file`; Colab xin quyền riêng khi chạy notebook.
 
-Ảnh và các tệp kết quả nằm trong thư mục riêng `M49-<job_id>` trên Drive. ID tệp được lưu trước khi tải lên để tiếp tục sau lỗi mạng mà không tạo trùng. Tệp kết quả được tạo bởi M49 rồi notebook cập nhật đúng ID, vì quyền `drive.file` không cho đọc tùy ý mọi tệp do Colab tạo. Backend kiểm tra mã lượt, checksum, danh sách mẫu và schema trước khi nhập; tiếp tục dùng snapshot bất biến và không nhập lặp. Giữ backend đang chạy để nhận kết quả; nếu tắt, mở lại để tiếp tục đồng bộ.
+Notebook và dữ liệu được tải lên Drive của người cấp quyền. Người tải repo có thể dùng tài khoản của chính họ, nhưng bản hiện tại vẫn cần cấu hình OAuth một lần. Chưa có luồng công khai chỉ cần đăng nhập là dùng cho mọi tài khoản.
 
-Lượt cũ dùng Drive Desktop vẫn được hỗ trợ. Các lượt mới trên giao diện dùng Google API, không cần cài Drive Desktop. Notebook 3D vẫn là template; tác vụ chưa đủ dữ liệu/model vẫn bị khóa.
+Client/token được lưu trong `STORAGE_DIR/google-colab/`, mặc định `backend/storage/google-colab/`, và không đưa lên Git hoặc chèn vào notebook. **Ngắt kết nối trên máy này** xóa token local, không xóa file Drive hoặc thu hồi quyền Google. Có thể thu hồi quyền trong phần bảo mật tài khoản Google.
 
-Colab cá nhân cần thao tác **Run all** và cấp quyền runtime, không có triển khai tự khởi chạy runtime trong M49. [FAQ Colab](https://research.google.com/colaboratory/faq.html), [OAuth Desktop + PKCE](https://developers.google.com/identity/protocols/oauth2/native-app), [quyền Drive](https://developers.google.com/workspace/drive/api/guides/api-specific-auth).
+## Chạy một lượt
+
+1. Chọn 2D, SEG hoặc 3D, nhập tên người thực hiện và bấm bắt đầu. Ứng dụng lấy ngẫu nhiên 10 mẫu không trùng và lưu cố định cho cả lượt.
+2. Gán nhãn từng mẫu Manual rồi **Lưu và chốt**. Timer tự bắt đầu khi mở mẫu. Ground truth và nhãn AI không hiển thị ở bước này.
+3. Sau đủ 10 Manual, kết nối Google, chọn model/confidence và bấm **Gửi 10 mẫu và mở Colab**. Với checkpoint riêng, dùng tệp phù hợp tác vụ; 3D dùng PointPillars.
+4. Trong Colab, kiểm tra đúng tài khoản Google, chọn GPU theo yêu cầu notebook, bấm **Runtime → Run all** và cấp quyền. Notebook đã có cấu hình lượt; không cần điền mã lượt hoặc đường dẫn.
+5. Giữ backend chạy để nhận kết quả. Khi đủ kết quả hợp lệ, ứng dụng mở Assisted. Kiểm tra/sửa nhãn AI rồi chốt từng mẫu, kể cả khi giữ nguyên dự đoán.
+6. Sau đủ 10 Assisted, xem điểm ba phương pháp, thời gian người thao tác và xuất CSV.
+
+Tải lại trang rồi chọn **Tiếp tục lượt đã lưu** để tiếp tục; không lấy bộ mẫu khác. Ứng dụng không tự bấm Run all hay khởi động runtime Colab.
+
+## Thao tác và cách đo
+
+Box/polygon có chọn, thêm, kéo, sửa, xóa, undo/redo và autosave. Với cuboid, chỉnh tâm/kích thước/yaw bằng trường số hoặc tay nắm ở góc Trên/Trước/Bên; góc phối cảnh dùng quan sát. Bật timer để chỉnh sửa; nhãn đã chốt được giữ riêng.
+
+Timer tính cả thời gian quan sát, không tự loại thời gian đứng yên. Bấm Tạm dừng khi nghỉ; ẩn tab hoặc mất kết nối sẽ gửi pause khi có thể. Heartbeat mỗi 10 giây, lease 30 giây giới hạn phần cộng thêm nếu tab crash/mất mạng. Khi quay lại, tiếp tục timer trước khi sửa.
+
+Bảng điểm hiển thị chất lượng và số liệu thời gian; đã bỏ cột Đạt/Chưa đạt. Thời gian AI inference hiển thị riêng, không cộng vào thời gian người gán nhãn. Công thức và ý nghĩa N/A ở [mô tả hệ thống](SYSTEM.md#scoring).
+
+## Xử lý lỗi
+
+- **Nút tác vụ bị khóa:** đọc lý do ở nút; kiểm tra manifest, đủ 10 mẫu và nhãn đúng loại. Một tệp lỗi trong manifest có thể chặn cả nguồn.
+- **Không mở Colab:** đợi tải xong, dùng liên kết notebook nếu popup bị chặn.
+- **Không kết nối Google:** kiểm tra Desktop client, Drive API, Test users, cổng callback và cấu hình mạng.
+- **Đổi tài khoản/Google hết hạn quyền:** kết nối lại bằng tài khoản đã tạo lượt. Lượt gắn với tài khoản gửi ban đầu.
+- **Chạy xong nhưng chưa có Assisted:** kiểm tra lỗi cell cuối, đủ kết quả, đúng tài khoản và backend còn chạy. M49 kiểm tra mã lượt, checksum, manifest và schema trước khi nhập.
+- **SEG báo mask có lỗ/nhiều vùng:** biểu diễn polygon hiện tại chưa hỗ trợ; không sửa nhãn thành box để né lỗi.
+- **3D lỗi GPU/CUDA:** giữ log notebook để chẩn đoán. Pipeline PointPillars đã có code và kiểm thử fixture, chưa nghiệm thu GPU thật.
+- **Lượt cũ dùng Drive Desktop:** backend còn hỗ trợ transport cũ; các lượt mới trên giao diện dùng Google API.
+
+## Kiểm tra trước khi thu kết quả
+
+Thử lưu/tải lại, timer pause/resume, giữ nguyên nhãn AI rồi chốt và xuất CSV. Chạy pilot riêng cho SEG/3D trước khi đo chính. Không thay đổi nhãn chuẩn, confidence hoặc danh sách mẫu sau khi xem kết quả chính để làm đẹp số liệu.
+
+Sao lưu SQLite và storage khi backend đã dừng; nếu dùng dataset riêng, sao lưu cả manifest/nhãn nguồn. Không xóa database để xử lý thay đổi schema.
