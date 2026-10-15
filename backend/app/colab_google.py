@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import tempfile
 from threading import RLock
 import time
 from urllib.error import HTTPError, URLError
@@ -33,6 +34,12 @@ def private_dir():
     from .main import STORAGE
     folder = STORAGE/'google-colab'
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if os.name == 'posix':
+        folder.chmod(0o700)
+        for name in ('client.json', 'token.json'):
+            path = folder/name
+            if path.exists():
+                path.chmod(0o600)
     return folder
 
 
@@ -41,11 +48,15 @@ def read_json(path, default=None):
 
 
 def write_json(path, value):
-    temporary = path.with_suffix('.tmp')
-    with temporary.open('w', encoding='utf-8') as stream:
-        os.chmod(temporary, 0o600)
-        json.dump(value, stream, ensure_ascii=False)
-    temporary.replace(path)
+    # Create exclusively with mode 0600, before any secret bytes are written.
+    fd, name = tempfile.mkstemp(prefix=path.name+'.', suffix='.tmp', dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            json.dump(value, stream, ensure_ascii=False)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def local_request(request: WebRequest):

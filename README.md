@@ -61,6 +61,14 @@ Bấm **Save** trong CVAT, quay về M49, nhập thời gian cho từng ảnh v�
 
 Sau khi nhận tệp trên máy, bấm **Đồng ý tải notebook và mở Colab** để chuyển model và dữ liệu lên Drive. Trong Colab, bấm **Run all** bằng cùng tài khoản Google. Notebook kiểm tra checksum, tác vụ và lớp của model trước khi dự đoán. Việc tải tệp thành công chưa xác nhận model tương thích; lỗi nạp model được hiển thị ở cell Colab. Model riêng 3D chưa được hỗ trợ.
 
+## Giới hạn triển khai và thông tin đăng nhập
+
+Ứng dụng dành cho một người dùng trên máy cá nhân, chạy đúng **một backend worker**. OAuth state và khóa xử lý nằm trong bộ nhớ của tiến trình; không chạy nhiều worker hoặc nhiều backend cùng dùng một thư mục storage. Docker được cấu hình `--workers 1`; khi tự chạy Uvicorn cũng cần dùng tùy chọn này. Không công khai backend ra Internet hoặc mạng dùng chung.
+
+Thư mục `storage` chứa OAuth client, Google refresh token và CVAT token. Chỉ tài khoản chạy ứng dụng được phép truy cập thư mục này; không đặt trên volume chia sẻ. Trên POSIX, thư mục Google được đặt quyền `0700`, các tệp thông tin đăng nhập và JSON mới ghi có quyền `0600`. Trên Windows, quyền truy cập phụ thuộc ACL kế thừa của thư mục: quyền POSIX không thay thế Windows ACL. Không chia sẻ hoặc commit storage.
+
+Kết nối CVAT cho phép chọn cổng localhost vì CVAT có thể chạy ở cổng khác nhau; chỉ dùng với dịch vụ CVAT do chính người dùng quản lý. Chức năng này không phải ranh giới bảo mật cho môi trường nhiều người dùng. Khi đang chấm điểm, yêu cầu chấm khác nhận HTTP 429 và cần thử lại sau khi yêu cầu trước hoàn tất.
+
 ## Công nghệ
 
 - **Frontend:** React, TypeScript, Vite.
