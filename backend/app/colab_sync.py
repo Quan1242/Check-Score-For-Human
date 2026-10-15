@@ -18,6 +18,7 @@ from .schemas import LabelBundle, StrictModel
 
 router = APIRouter(prefix='/api')
 SYNC_LOCK = Lock()
+MAX_CHECKPOINT_BYTES = 512*1024*1024
 
 
 @router.get('/colab/notebooks/{task}')
@@ -58,11 +59,13 @@ def model_config(choice, task, root):
     if choice.preset == 'custom':
         name = choice.checkpoint or ''
         if not name.startswith('models/') or Path(name).suffix != '.pt' or '\\' in name:
-            raise HTTPException(422, 'Chọn checkpoint .pt đã tải lên Drive trong ứng dụng')
+            raise HTTPException(422, 'Chọn checkpoint .pt đã tải lên trong ứng dụng')
         path = (root/name).resolve()
         if not path.is_relative_to((root/'models').resolve()) or not path.is_file():
-            raise HTTPException(422, 'Không tìm thấy checkpoint trên Drive')
-        return dict(checkpoint=name, custom=True, sha256=hashlib.sha256(path.read_bytes()).hexdigest(), confidence=choice.confidence)
+            raise HTTPException(422, 'Không tìm thấy checkpoint đã tải lên')
+        with path.open('rb') as stream:
+            checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
+        return dict(checkpoint=name, custom=True, sha256=checksum, confidence=choice.confidence)
     if choice.checkpoint is not None:
         raise HTTPException(422, 'Checkpoint riêng chỉ dùng với lựa chọn custom')
     preset = 'yolo11s' if choice.preset == 'auto' else choice.preset
@@ -80,6 +83,7 @@ async def upload_checkpoint(file: UploadFile = File(...)):
 
 async def store_checkpoint(file, root):
     if Path(file.filename or '').suffix.lower() != '.pt':
+        await file.close()
         raise HTTPException(422, 'Notebook hiện hỗ trợ checkpoint Ultralytics .pt')
     folder = root/'models'
     folder.mkdir(exist_ok=True)
@@ -90,7 +94,7 @@ async def store_checkpoint(file, root):
         with temporary.open('xb') as stream:
             while chunk := await file.read(1024*1024):
                 size += len(chunk)
-                if size > 512*1024*1024:
+                if size > MAX_CHECKPOINT_BYTES:
                     raise HTTPException(413, 'Checkpoint tối đa 512 MiB')
                 digest.update(chunk)
                 stream.write(chunk)

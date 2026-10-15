@@ -60,7 +60,7 @@ def test_oauth_pkce_one_use_state_and_private_tokens(client, monkeypatch):
     result = client.post('/api/colab/google/connect').json()
     query = parse_qs(urlparse(result['url']).query)
     assert query['scope'] == [google.SCOPE]
-    assert query['redirect_uri'] == [google.REDIRECT]
+    assert query['redirect_uri'] == [google.redirect_uri()]
     assert query['code_challenge_method'] == ['S256']
     assert 'client_secret' not in query
     state = query['state'][0]
@@ -82,6 +82,53 @@ def test_oauth_pkce_one_use_state_and_private_tokens(client, monkeypatch):
     assert public.json()['connected']
     assert 'secret' not in public.text and 'secret' not in response.text
     assert client.post('/api/colab/google/disconnect').json()['connected'] is False
+
+
+def test_oauth_callback_uses_selected_backend_port(client, monkeypatch):
+    monkeypatch.setenv('M49_BACKEND_PORT', '43127')
+    configure(client)
+    url = client.post('/api/colab/google/connect').json()['url']
+    query = parse_qs(urlparse(url).query)
+    expected_redirect = 'http://127.0.0.1:43127/api/colab/google/callback'
+    assert query['redirect_uri'] == [expected_redirect]
+
+    observed = []
+    monkeypatch.setattr(google, 'token_request', lambda values: observed.append(values) or dict(
+        access_token='secret-access', refresh_token='secret-refresh',
+        expires_in=3600, scope=google.SCOPE))
+    monkeypatch.setattr(google, 'http', lambda *a, **kw: (b'{"user":{"permissionId":"account-one"}}', {}))
+    response = client.get('/api/colab/google/callback', params={
+        'state': query['state'][0], 'code': 'code'})
+    assert response.status_code == 200
+    assert observed[0]['redirect_uri'] == expected_redirect
+
+
+@pytest.mark.parametrize('error', [google.URLError('offline'), ConnectionError('offline')])
+def test_google_http_reports_network_connectivity_errors(monkeypatch, error):
+    def disconnected(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(google, 'urlopen', disconnected)
+    with pytest.raises(RuntimeError, match='Không kết nối được Google Drive'):
+        google.http('GET', google.API+'about')
+
+
+def test_callback_reports_google_network_failure(client, monkeypatch):
+    configure(client)
+    url = client.post('/api/colab/google/connect').json()['url']
+    state = parse_qs(urlparse(url).query)['state'][0]
+    monkeypatch.setattr(google, 'token_request', lambda values: dict(
+        access_token='secret-access', refresh_token='secret-refresh',
+        expires_in=3600, scope=google.SCOPE))
+
+    def disconnected(*args, **kwargs):
+        raise RuntimeError('Không kết nối được Google Drive')
+
+    monkeypatch.setattr(google, 'http', disconnected)
+    response = client.get('/api/colab/google/callback', params={'state': state, 'code': 'code'})
+    assert response.status_code == 400
+    assert 'Kiểm tra mạng rồi kết nối lại' in response.json()['detail']
+    assert 'secret' not in response.text
 
 
 def test_oauth_denial_expiry_scope_and_cross_origin(client, monkeypatch):
@@ -216,9 +263,14 @@ def test_upload_uses_reserved_id_and_chunks(client, monkeypatch, tmp_path):
     connected()
     content = tmp_path/'model.pt'
     content.write_bytes(b'x'*(8*1024*1024+7))
-    def missing(*args, **kwargs):
-        raise google.GoogleError(404)
-    monkeypatch.setattr(google, 'drive', missing)
+    checks = []
+    def metadata(*args, **kwargs):
+        checks.append(True)
+        if len(checks) == 1:
+            raise google.GoogleError(404)
+        return dict(id='reserved-id', size=str(content.stat().st_size),
+                    md5Checksum=hashlib.md5(content.read_bytes()).hexdigest())
+    monkeypatch.setattr(google, 'drive', metadata)
     calls = []
     def fake_http(method, url, data=None, headers=None, **kwargs):
         calls.append((method, url, len(data), headers, json.loads(data) if method == 'POST' else None))
@@ -228,13 +280,89 @@ def test_upload_uses_reserved_id_and_chunks(client, monkeypatch, tmp_path):
     assert calls[0][4]['id'] == 'reserved-id'
     assert [c[2] for c in calls[1:]] == [8*1024*1024, 7]
     assert calls[-1][3]['Content-Range'] == f'bytes {8*1024*1024}-{content.stat().st_size-1}/{content.stat().st_size}'
+    assert calls[-1][3]['Authorization'] == 'Bearer private-access-token'
 
 
-def test_notebook_downloads_selected_files_and_retries_result_transfer(tmp_path, monkeypatch):
+@pytest.mark.parametrize('task', ['detection_2d', 'instance_segmentation'])
+def test_custom_checkpoint_upload_job_and_drive_contents(client, monkeypatch, task):
+    connected()
+    raw = b'uploaded-model-fixture'
+    result = client.post('/api/colab/google/checkpoints', files={'file': ('my-model.PT', raw)})
+    assert result.status_code == 201, result.text
+    checkpoint = result.json()['checkpoint']
+    assert result.json()['sha256'] == hashlib.sha256(raw).hexdigest()
+    pid = project(client, task)
+    asset = upload_image(client, pid).json()['id']
+    for session in db_session():
+        result = colab_sync.export_job(pid, colab_sync.JobCreate(asset_ids=[asset],
+            model=colab_sync.ModelChoice(preset='custom', checkpoint=checkpoint)), session, google=True)
+        job = session.get(ColabJob, result['id'])
+        session.expunge(job)
+    files, _ = fake_drive(monkeypatch)
+    google.sync_job(job)
+    state = google.read_json(Path(job.root)/job.id/'google.json')
+    assert files[state['ids']['model']][1] == raw
+    request = json.loads(files[state['ids']['request']][1])
+    assert request['model']['checkpoint'] == checkpoint
+    assert request['model']['sha256'] == hashlib.sha256(raw).hexdigest()
+    assert request['model']['custom'] is True
+    assert job.status == 'awaiting_colab'
+
+
+def test_checkpoint_rejects_invalid_uploads_and_removes_partial_files(client, monkeypatch):
+    assert client.post('/api/colab/google/checkpoints', files={'file':('model.pt',b'123')}).status_code == 422
+    connected()
+    monkeypatch.setattr(colab_sync, 'MAX_CHECKPOINT_BYTES', 4)
+    for filename, data, status in [('model.txt',b'12',422), ('model.pt',b'',422), ('model.pt',b'12345',413)]:
+        assert client.post('/api/colab/google/checkpoints', files={'file':(filename,data)}).status_code == status
+    assert not list((google.private_dir()/'jobs/models').glob('*'))
+    for name in ['models/../../token.pt', 'models/missing.pt', '../model.pt']:
+        with pytest.raises(google.HTTPException):
+            colab_sync.model_config(colab_sync.ModelChoice(preset='custom',checkpoint=name),
+                                    'detection_2d', google.private_dir()/'jobs')
+
+
+def test_upload_repairs_incomplete_remote_file_and_respects_partial_ack(client, monkeypatch, tmp_path):
+    connected()
+    source = tmp_path/'model.pt'
+    source.write_bytes(b'abcdef')
+    queries, chunks = [], []
+    def metadata(*args):
+        queries.append(True)
+        return dict(id='model', size='2' if len(queries)==1 else '6',
+                    md5Checksum='wrong' if len(queries)==1 else hashlib.md5(b'abcdef').hexdigest())
+    def transport(method, url, data=None, headers=None):
+        if method == 'PATCH':
+            assert '/files/model?uploadType=resumable' in url
+            assert 'id' not in json.loads(data)
+            return b'', {'Location':'https://www.googleapis.com/upload/session'}
+        assert method == 'PUT'
+        chunks.append((data,headers['Content-Range']))
+        return b'', {'Range':'bytes=0-1'} if len(chunks)==1 else {}
+    monkeypatch.setattr(google, 'drive', metadata)
+    monkeypatch.setattr(google, 'http', transport)
+    google.upload_file('model', 'model.pt', 'folder', source)
+    assert chunks == [(b'abcdef','bytes 0-5/6'), (b'cdef','bytes 2-5/6')]
+
+
+def test_upload_checksum_mismatch_does_not_mark_success(client, monkeypatch, tmp_path):
+    connected()
+    source = tmp_path/'model.pt'
+    source.write_bytes(b'model')
+    monkeypatch.setattr(google, 'drive', lambda *args: {'id':'model','size':'5','md5Checksum':'wrong'})
+    monkeypatch.setattr(google, 'http', lambda *args: (b'', {'Location':'https://www.googleapis.com/upload/session'}))
+    with pytest.raises(ValueError, match='checksum'):
+        google.upload_file('model', 'model.pt', 'folder', source)
+
+
+@pytest.mark.parametrize('task', ['detection_2d', 'instance_segmentation'])
+def test_notebook_downloads_selected_files_and_retries_result_transfer(tmp_path, monkeypatch, task):
     job = SimpleNamespace(id='selected-job', manifest=['demo.png'])
     output_names = ['predictions.json','timing.json','environment.txt','result.ready.json']
-    ids = {'request':'request-id','asset:demo.png':'image-id', **{'output:'+n:n for n in output_names}}
-    request = {'task':'detection_2d','manifest':job.manifest,'model':{},'job_id':job.id,
+    model_bytes = b'custom-checkpoint-content'
+    ids = {'request':'request-id','asset:demo.png':'image-id','model':'model-id', **{'output:'+n:n for n in output_names}}
+    request = {'task':task,'manifest':job.manifest,'model':dict(custom=True, checkpoint='models/custom.pt',
+               sha256=hashlib.sha256(model_bytes).hexdigest()),'job_id':job.id,
                'sha256':{'demo.png':hashlib.sha256(b'image').hexdigest()}}
     notebook = json.loads(google.notebook_bytes(job, {'ids':ids}, request))
     config = next(''.join(c['source']) for c in notebook['cells'] if '# M49_GOOGLE_HANDOFF' in ''.join(c['source']))
@@ -250,7 +378,7 @@ def test_notebook_downloads_selected_files_and_retries_result_transfer(tmp_path,
         def get(self, url, **kw):
             file_id = url.split('/files/')[1].split('?')[0]
             downloads.append(file_id)
-            return Response({'request-id':json.dumps(request).encode(),'image-id':b'image'}[file_id])
+            return Response({'request-id':json.dumps(request).encode(),'image-id':b'image','model-id':model_bytes}[file_id])
         def patch(self, url, data, **kw):
             name = url.split('/files/')[1].split('?')[0]
             if name == 'timing.json' and fail[0]:
@@ -268,9 +396,17 @@ def test_notebook_downloads_selected_files_and_retries_result_transfer(tmp_path,
     helpers = runpy.run_path(str(Path(__file__).resolve().parents[2]/'colab/drive_transport.py'))
     namespace = {'Path':Path, 'publish_drive_result':helpers['publish_drive_result']}
     exec(compile(bootstrap, 'handoff', 'exec'), namespace)
-    assert downloads == ['request-id','image-id'] and auth_calls == [True]
-    assert helpers['load_drive_job'](local_root,'detection_2d') == request
+    assert downloads == ['request-id','image-id','model-id'] and auth_calls == [True]
+    assert helpers['load_drive_job'](local_root,task) == request
+    selection = config[config.index('# M49_MODEL_SELECTION'):config.index('# Exact semantic aliases')]
+    namespace.update(request=request, hashlib=hashlib)
+    exec(compile(selection, 'model-selection', 'exec'), namespace)
+    assert Path(namespace['CHECKPOINT']).read_bytes() == model_bytes
+    (local_root.parent/'models/custom.pt').write_bytes(b'corrupted')
+    with pytest.raises(AssertionError, match='Checkpoint'):
+        exec(compile(selection, 'model-selection', 'exec'), namespace)
     payload = bundle()
+    payload['task'] = task
     with pytest.raises(RuntimeError, match='network failure'):
         namespace['publish_drive_result'](local_root,request,payload,{},'fixture')
     assert 'result.ready.json' not in [name for name, _ in uploads]

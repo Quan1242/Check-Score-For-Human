@@ -237,6 +237,9 @@ def experiment_scores(exp, session):
     imported_ids = set(session.exec(select(AnnotationEvent.assignment_id).where(
         AnnotationEvent.assignment_id.in_([a.id for a in assignments]),
         AnnotationEvent.kind == 'cvat_import_declared_time')).all())
+    cvat_sample_ids = set(session.exec(select(AnnotationEvent.assignment_id).where(
+        AnnotationEvent.assignment_id.in_([a.id for a in assignments]),
+        AnnotationEvent.kind == 'cvat_import_declared_sample_time')).all())
     ai_ids = session.exec(select(LabelSet.id).where(LabelSet.project_id == exp.project_id, LabelSet.source == 'ai').limit(4)).all()
     if len(assignments) > 40 or len(ai_ids) > 3:
         raise ValueError('Demo giới hạn 40 nhiệm vụ và 3 bản AI/dự án. Dùng dự án demo riêng.')
@@ -246,7 +249,8 @@ def experiment_scores(exp, session):
         sample = sample_of(label, asset.name) if label else None
         rows.append(dict(assignment_id=row.id, label_set_id=row.final_id, asset_name=asset.name,
             source=row.mode, annotator=row.annotator, active_seconds=elapsed(row), completed=sample is not None,
-            time_source='declared_total_uniformly_distributed' if row.id in imported_ids else 'server_timer',
+            time_source='declared_cvat_sample' if row.id in cvat_sample_ids else
+                'declared_total_uniformly_distributed' if row.id in imported_ids else 'server_timer',
             metrics=score_sample(sample['objects'], sample_of(truth, asset.name)['objects'], project.classes,
                 exp.iou_threshold, (asset.width, asset.height) if asset.width else None) if sample else None))
     for label_id in ai_ids:
@@ -268,7 +272,8 @@ def experiment_scores(exp, session):
         total = counts(sum(m['tp'] for m in metrics), sum(m['fp'] for m in metrics),
                        sum(m['fn'] for m in metrics), sum((m['mean_iou'] or 0)*m['tp'] for m in metrics))
         summary.append(dict(source=source, annotator=annotator, run_id=run_id, assigned=len(group),
-            completed=len(completed), completion_rate=len(completed)/len(group), **total))
+            expected=len(assets), completed=len(completed),
+            completion_rate=len(completed)/len(assets), **total))
     return dict(experiment_id=exp.id, task=project.task, ground_truth_id=exp.ground_truth_id,
         iou_threshold=exp.iou_threshold, missing_policy='exclude_from_metrics_report_completion', rows=rows, summary=summary,
         time_comparison=compare_times(rows, len(assets)),

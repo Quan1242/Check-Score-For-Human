@@ -1,134 +1,76 @@
-# M49 — Hướng dẫn sử dụng
+# M49 — So sánh gán nhãn người và AI
 
-M49 so sánh **Người tự gán nhãn → AI → Người sửa nhãn AI** trên cùng 10 mẫu. Hỗ trợ box 2D, segmentation bằng polygon đơn và cuboid 3D LiDAR. Web chạy local cho một người dùng; AI chạy trên Google Colab của người cấp quyền.
+Ứng dụng web so sánh chất lượng và thời gian của ba phương pháp trên cùng bộ 10 mẫu: **người tự gán nhãn**, **AI dự đoán** và **người chỉnh sửa nhãn AI**.
 
-## 1. Cài đặt lần đầu
+Hỗ trợ hộp 2D, phân vùng bằng polygon và hộp 3D trên dữ liệu LiDAR. Web chạy trên máy cá nhân; mô hình AI chạy trên Google Colab.
 
-Cài Python **3.14.x** và Node.js **22**. Mở PowerShell tại thư mục dự án:
+## Chức năng
+
+- Chọn ngẫu nhiên 10 mẫu và giữ nguyên bộ mẫu cho cả ba phương pháp.
+- Vẽ, chỉnh sửa, lưu nhãn và đo thời gian thao tác.
+- Gửi dữ liệu sang Colab qua Google Drive và nhận kết quả AI.
+- Đánh giá số đối tượng tìm đúng, vẽ thừa hoặc sai, bỏ sót, mức độ đầy đủ và độ khớp với nhãn chuẩn.
+- Xem kết quả tổng cả lượt, chi tiết từng mẫu và xuất CSV.
+
+## Chạy web
+
+1. Giải nén mã nguồn vào một thư mục trên máy.
+2. Giải nén **`m49-test-data.zip` vào thư mục gốc dự án**, cùng cấp với `chay_web.bat`. ZIP đã chứa `data/test20/`, không giải nén vào một thư mục `data/test20` khác.
+3. Nhấp đúp **`chay_web.bat`**. File BAT tự chọn hai cổng còn trống cho backend và frontend, rồi mở web trong trình duyệt.
+
+Giữ hai cửa sổ **M49 Backend** và **M49 Frontend** mở trong lúc sử dụng. Để dừng web, nhấn `Ctrl+C` trong từng cửa sổ rồi đóng lại. Những lần sau chỉ cần bật lại file BAT.
+
+Kết nối Google Drive chỉ cần khi dùng luồng AI. Nếu mạng hoặc Google không truy cập được, ứng dụng sẽ báo lỗi kết nối khi thực hiện thao tác Google; các chức năng web cục bộ vẫn chạy.
+
+Dữ liệu mẫu được cung cấp riêng, không nằm trong mã nguồn Git. Máy mới cần thực hiện phần cài đặt lần đầu bên dưới trước khi bật BAT.
+
+<details>
+<summary>Cài đặt lần đầu trên máy mới</summary>
+
+Cài **Python 3.14.x** và **Node.js 22 trở lên**. Mở PowerShell tại thư mục dự án và chạy:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --only-binary=:all: -r backend/requirements-dev.txt
-.\.venv\Scripts\python.exe -m pip check
+.\.venv\Scripts\python.exe -m pip install --only-binary=:all: -r backend/requirements.txt
 cd frontend
 npx --yes pnpm@10.11.0 install --frozen-lockfile
 cd ..
 ```
 
-## 2. Chuẩn bị dữ liệu test
+Sau đó nhấp đúp `chay_web.bat`.
 
-Repo không chứa dataset. Nếu đã nhận **m49-test-data.zip**, giải nén vào thư mục gốc dự án. ZIP đã chứa đường dẫn `data/test20/`, không giải nén vào một thư mục `data/test20` khác.
+</details>
 
-Kiểm tra sau khi giải nén:
+## Sử dụng
 
-```text
-data/test20/bdd100k_manifest.json
-data/test20/kitti_2d_manifest.json
-data/test20/segmentation_manifest.json
-data/test20/kitti_3d_manifest.json
-data/test20/bdd100k/assets/
-data/test20/segmentation/assets/
-data/test20/kitti/training/
-```
+Chọn tác vụ và nhập tên → gán nhãn, chốt đủ 10 mẫu → kết nối Google và mở notebook Colab → bấm **Runtime → Run all** → chỉnh sửa, chốt nhãn AI → xem kết quả.
 
-ZIP được chuẩn bị riêng tại `data/exports/m49-test-data.zip` trên máy đóng gói; không tải xuống cùng khi clone Git. Bộ mẫu hiện có 20 mẫu 2D, 17 mẫu SEG và 10 mẫu 3D hợp lệ. Mỗi lượt lấy ngẫu nhiên 10 mẫu của tác vụ đã chọn.
+Lần đầu dùng AI, mở **Cấu hình kết nối Google một lần** trên web để nhập OAuth client JSON loại Desktop app của dự án Google Cloud đã bật Drive API. Nếu ứng dụng Google đang ở chế độ Testing, thêm tài khoản sử dụng vào Test users. Colab 3D cần GPU.
 
-Nếu tự chuẩn bị dữ liệu, xem [cấu trúc dataset và nhãn](docs/GUIDED_WORKFLOW.md#du-lieu). Có thể đặt `M49_TEST20_DIR` để dùng thư mục khác. Tác vụ chỉ mở khi có ít nhất 10 mẫu hợp lệ.
+### Dùng CVAT đã có trên máy
 
-## 3. Mở web
+Ở bước gán nhãn 2D hoặc SEG, chọn **Kết nối CVAT trên máy**. Nhập địa chỉ CVAT (mặc định `http://localhost:8080`) và Personal Access Token có quyền đọc/ghi từ **User settings → Security** của CVAT. M49 không tự cài CVAT.
 
-Nhấp đúp **chay_web.bat**, hoặc chạy:
+Bấm **Tạo task CVAT cho tối đa 10 ảnh**, chờ xử lý ảnh rồi mở task và job để gán nhãn. Các ảnh chưa chốt của cùng người, cùng lượt Manual hoặc Assisted được gom vào một task; lượt Assisted được nạp nhãn AI ban đầu. Task một ảnh đã tạo trước đây vẫn được giữ nguyên, không chuyển hoặc ghi đè nhãn cũ.
 
-```powershell
-.\chay_web.bat
-```
+Bấm **Save** trong CVAT, quay về M49, nhập thời gian cho từng ảnh và bấm **Lấy nhãn đã lưu từ CVAT và chốt tất cả ảnh trong task**. M49 đối chiếu tên, kích thước và frame của từng ảnh trước khi nhập. Nếu một ảnh có nhãn không hợp lệ hoặc bản nháp M49 đã thay đổi, cả lần nhập bị hủy để tránh chốt dở dang. Thời gian nhập tay không dùng để tính tăng tốc tự động. Tác vụ 3D dùng trình gán nhãn M49.
 
-Web mở tại **http://127.0.0.1:5173**. Giữ hai cửa sổ backend và frontend hoạt động trong suốt quá trình sử dụng, kể cả lúc AI chạy trên Colab.
+### Dùng model riêng trên Colab
 
-Những lần sau chỉ cần chạy lại file BAT. Dùng `chay_web.bat --check` để kiểm tra môi trường mà chưa mở server. Để dừng, nhấn `Ctrl+C` trong từng cửa sổ server rồi đóng cửa sổ.
+Ở bước AI, chọn **Tải checkpoint .pt của tôi**, kết nối Google rồi chọn model Ultralytics đúng tác vụ: detection cho 2D, segmentation cho SEG; tối đa 512 MiB. Model cần có lớp phù hợp với bộ mẫu (`car` trong luồng 10 mẫu).
 
-## 4. Bắt đầu và gán nhãn Manual
+Sau khi nhận tệp trên máy, bấm **Đồng ý tải notebook và mở Colab** để chuyển model và dữ liệu lên Drive. Trong Colab, bấm **Run all** bằng cùng tài khoản Google. Notebook kiểm tra checksum, tác vụ và lớp của model trước khi dự đoán. Việc tải tệp thành công chưa xác nhận model tương thích; lỗi nạp model được hiển thị ở cell Colab. Model riêng 3D chưa được hỗ trợ.
 
-1. Chọn tác vụ **2D**, **SEG** hoặc **3D**.
-2. Nhập tên người thực hiện, bấm **Lấy ngẫu nhiên 10 mẫu và bắt đầu**.
-3. Gán nhãn từng mẫu từ dữ liệu gốc rồi bấm **Lưu và chốt**.
-4. Hoàn thành đủ 10 mẫu để chuyển sang bước AI.
+## Công nghệ
 
-Web giữ nguyên 10 mẫu cho cả ba phương pháp. Timer đo thời gian thao tác; bấm **Tạm dừng** khi nghỉ. Nhãn chuẩn và dự đoán AI không hiển thị trong bước Manual.
+- **Frontend:** React, TypeScript, Vite.
+- **Backend:** FastAPI, SQLModel, SQLite.
+- **AI:** YOLO11 cho 2D/SEG, PointPillars cho 3D, chạy trên Colab.
 
-## 5. Cấp quyền Google và tự tải notebook
+## Tài liệu
 
-### Cấu hình Google một lần trên máy
+- [Cấu trúc hệ thống và công thức đánh giá](docs/SYSTEM.md).
+- [Định dạng dữ liệu nhãn](docs/label-bundle.schema.json).
+- [Notebook Colab](colab/README.md).
 
-Nếu chưa cấu hình, tại bước AI mở **Cấu hình kết nối Google một lần**:
-
-1. Trong Google Cloud, bật **Google Drive API**.
-2. Cấu hình OAuth consent screen; nếu đang ở chế độ Testing, thêm tài khoản sử dụng vào **Test users**.
-3. Tạo OAuth client loại **Desktop app**, tải tệp JSON.
-4. Chọn tệp đó trong ô **OAuth client JSON** trên web.
-
-Xem [hướng dẫn kết nối Google](docs/GUIDED_WORKFLOW.md#ket-noi-google). Bản clone mới cần cấu hình này trước khi người dùng có thể bấm cấp quyền.
-
-### Thao tác cho mỗi lượt AI
-
-1. Chọn model và ngưỡng confidence. Mặc định dùng YOLO11s cho 2D, YOLO11s-seg cho SEG, PointPillars cho 3D.
-2. Bấm **Đồng ý cấp quyền và tự tải notebook**.
-3. Trong cửa sổ Google, đăng nhập và đồng ý cấp quyền Drive. Giữ trang M49 mở.
-4. **Web tự tạo và tải file `.ipynb` cùng 10 mẫu lên Drive của tài khoản vừa cấp quyền, rồi mở Colab.** Không cần tải notebook thủ công, dán mã lượt, gửi URL cho người khác hoặc bấm gửi lần nữa sau khi cấp quyền.
-
-Nếu đã kết nối Google, nút hiển thị **Đồng ý tải notebook và mở Colab**. Với checkpoint riêng, chọn model tùy chỉnh, kết nối Google trước, tải tệp `.pt` phù hợp rồi bấm đồng ý tải notebook.
-
-Chỉ dữ liệu đầu vào, calibration cần thiết và cấu hình model được gửi để chạy AI. Ground truth và nhãn Manual không được gửi lên Colab.
-
-## 6. Chạy AI trong Colab
-
-1. Kiểm tra Colab dùng cùng tài khoản Google vừa kết nối.
-2. Chọn GPU theo yêu cầu notebook; 3D cần GPU.
-3. Bấm **Runtime → Run all** và xác nhận quyền Google nếu notebook yêu cầu.
-4. Chờ notebook chạy xong, giữ backend M49 hoạt động.
-
-**Tải notebook lên là tự động; thao tác Run all vẫn do bạn thực hiện trong Colab.** Khi nhận đủ kết quả hợp lệ qua Drive, web tự chuyển sang bước Người sửa AI.
-
-## 7. Sửa nhãn AI và xem kết quả
-
-1. Rà soát dự đoán trên từng mẫu, sửa nếu cần.
-2. Bấm **Lưu và chốt** cho từng mẫu, kể cả khi giữ nguyên dự đoán.
-3. Hoàn thành đủ 10 mẫu Assisted để xem điểm Người / AI / Người + AI, thời gian và xuất CSV.
-
-Nếu tải lại trang, chọn lượt trong **Tiếp tục lượt đã lưu**. Web giữ bộ mẫu đã chọn. Xem [hướng dẫn chi tiết](docs/GUIDED_WORKFLOW.md) để thực hiện các lượt và đo thời gian nhất quán.
-
-## Khi gặp lỗi
-
-- **Tác vụ bị khóa:** kiểm tra đã giải nén đúng `data/test20/`, đủ mẫu và nhãn hợp lệ; đọc lý do trên web.
-- **BAT không chạy:** chạy `chay_web.bat --check`, kiểm tra Python/Node và thư viện. Nếu cổng 8000/5173 đang dùng, dừng server cũ trước khi mở lại.
-- **Không hiện cửa sổ Google:** bấm liên kết **Mở cửa sổ cấp quyền nếu trình duyệt chặn popup**.
-- **Từ chối hoặc chưa cấp quyền:** bấm **Hủy chờ cấp quyền**, rồi thử lại. Phiên chờ hết hạn sau khoảng 10 phút.
-- **Google báo lỗi:** kiểm tra Drive API, Desktop OAuth client, Test users và backend cổng 8000.
-- **Notebook đã tải nhưng Colab chưa mở:** bấm **Mở notebook của lượt này trên Colab** trên web.
-- **AI chạy xong nhưng web chưa chuyển bước:** giữ backend chạy, kiểm tra lỗi cell cuối notebook và đúng tài khoản Google. Web chỉ nhận kết quả đủ mẫu, đúng lượt và đúng định dạng.
-- **Đổi tài khoản hoặc quyền hết hạn:** kết nối lại bằng tài khoản đã tạo lượt AI đó.
-
-## Tài liệu và kiểm thử
-
-- [Hướng dẫn chi tiết](docs/GUIDED_WORKFLOW.md): dữ liệu, Google, thao tác và xử lý lỗi.
-- [Mô tả hệ thống](docs/SYSTEM.md): kiến trúc, công thức chấm và giới hạn.
-- [Notebook Colab](colab/README.md): model và cách tái tạo notebook.
-- [JSON schema](docs/label-bundle.schema.json): định dạng nhãn.
-- API local: http://127.0.0.1:8000/docs.
-
-Kiểm thử backend từ thư mục `backend/`:
-
-```powershell
-..\.venv\Scripts\python.exe -m pytest -q -W error
-```
-
-Kiểm thử frontend từ thư mục `frontend/`:
-
-```powershell
-npx --yes pnpm@10.11.0 test
-npx --yes pnpm@10.11.0 build
-```
-
-Ngày 15/10/2026: thay đổi tự gửi notebook sau cấp quyền đã qua 9 test frontend, 16 test backend liên quan và build. Test Google dùng API giả lập; luồng cấp quyền mới chưa được thử lại với tài khoản Google thật. Trước đó đã kiểm chứng một lượt 2D với YOLO11s trên Tesla T4; chưa nghiệm thu toàn luồng SEG/3D trên GPU hoặc tài khoản Google thứ hai.
-
-Ứng dụng dành cho thử nghiệm local, chưa có xác thực nhiều người dùng hoặc COCO/KITTI AP chính thức. Database, dữ liệu mẫu, file upload và OAuth client/token nằm ngoài Git.
+Điểm đánh giá theo giao thức M49, không phải COCO/KITTI AP chính thức.

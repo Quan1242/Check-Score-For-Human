@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from app.evaluation.metrics import geometry_iou, score_sample
+from app.evaluation.metrics import geometry_iou, optimal_matching, score_sample
 
 
 def label(identifier, geometry, category='car'):
@@ -31,3 +31,26 @@ def test_wrong_class_is_not_a_true_positive():
     box = dict(kind='bbox2d', xyxy=[0, 0, 10, 10])
     report = score_sample([label('pred', box, 'bus')], [label('gt', box)], ['car', 'bus'], 0.5)
     assert (report['tp'], report['fp'], report['fn']) == (0, 1, 1)
+
+
+def test_matching_maximizes_pairs_before_iou():
+    assert sorted(optimal_matching([[1, 0.5], [0.5, 0.49]], 0.5)) == [
+        (0, 1, 0.5), (1, 0, 0.5)]
+
+
+def test_matching_maximizes_iou_for_equal_pair_count():
+    assert sorted(optimal_matching([[0.6, 0.9], [0.8, 0.6]], 0.5)) == [
+        (0, 1, 0.9), (1, 0, 0.8)]
+
+
+def test_duplicate_prediction_is_false_positive():
+    box = dict(kind='bbox2d', xyxy=[0, 0, 10, 10])
+    report = score_sample([label('p1', box), label('p2', box)], [label('gt', box)], ['car'], 0.5)
+    assert (report['tp'], report['fp'], report['fn']) == (1, 1, 0)
+    assert report['f1'] == pytest.approx(2/3)
+
+
+def test_empty_labels_are_not_perfect_scores():
+    report = score_sample([], [], ['car'], 0.5)
+    assert (report['tp'], report['fp'], report['fn']) == (0, 0, 0)
+    assert all(report[key] is None for key in ('precision', 'recall', 'f1', 'mean_iou'))

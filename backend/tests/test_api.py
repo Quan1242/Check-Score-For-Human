@@ -99,3 +99,31 @@ def test_segmentation_and_3d_validation(client):
     assert import_json(client, p3, "ai", data).status_code == 201
     data["samples"][0]["objects"][0]["geometry"]["size_lwh"][0] = -1
     assert import_json(client, p3, "ai", data).status_code == 422
+
+
+def test_score_completion_includes_assets_without_assignments(client):
+    pid = project(client)
+    first = upload_image(client, pid).json()['id']
+    stream = BytesIO()
+    Image.new('RGB', (100, 80)).save(stream, format='PNG')
+    second = client.post(f'/api/projects/{pid}/assets',
+        files={'file': ('second.png', stream.getvalue(), 'image/png')}).json()['id']
+    data = bundle()
+    data['samples'].append({'asset_name': 'second.png', 'objects': []})
+    truth = import_json(client, pid, 'ground_truth', data).json()['id']
+    exp = client.post(f'/api/projects/{pid}/experiments', json=dict(
+        name='Partial', ground_truth_id=truth, asset_ids=[first, second])).json()['id']
+    row = client.post(f'/api/experiments/{exp}/assignments', json=dict(
+        asset_id=first, annotator='Tester', mode='manual')).json()
+    row = client.post(f"/api/assignments/{row['id']}/draft", json=dict(
+        revision=row['revision'], objects=data['samples'][0]['objects'])).json()
+    assert client.post(f"/api/assignments/{row['id']}/finalize",
+        json=dict(revision=row['revision'])).status_code == 200
+    response = client.get(f'/api/experiments/{exp}/score')
+    assert response.status_code == 200, response.text
+    summary = response.json()['summary'][0]
+    assert summary['assigned'] == summary['completed'] == 1
+    assert summary['expected'] == 2
+    assert summary['completion_rate'] == 0.5
+    # An unassigned sample affects completion, not the final-label metrics.
+    assert summary['f1'] == 1

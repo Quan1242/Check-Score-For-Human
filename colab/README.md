@@ -20,4 +20,4 @@ python scripts/build_3d_notebook.py
 
 Generator SEG lấy notebook 2D làm nền và dùng validator schema backend. Generator 3D dùng adapter PointPillars và helper transport. Sau khi sinh lại, chạy kiểm thử backend và kiểm tra diff notebook.
 
-Xem [hướng dẫn dữ liệu và Google](../docs/GUIDED_WORKFLOW.md) và [hợp đồng dữ liệu](../docs/SYSTEM.md#data-contract). Trạng thái kiểm chứng hiện tại được ghi một nơi trong [README](../README.md#kiểm-thử-và-trạng-thái).
+Xem [hướng dẫn chạy web](../README.md) và [cấu trúc nhãn](../docs/SYSTEM.md#data-contract).

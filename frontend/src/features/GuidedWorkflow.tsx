@@ -6,6 +6,7 @@ import AnnotationWorkspace from './annotation/AnnotationWorkspace';
 import { ExperimentResults } from './Experiments';
 import '../guided.css';
 import { waitForGoogleConnection } from './googleConsent';
+import CvatWorkspace from './CvatWorkspace';
 
 type Run = { id: string; dataset: string; project: Project; experiment_id: string; annotator: string; phase: 'manual'|'ai'|'assisted'|'results'; manual_completed: number; assisted_completed: number; total: number; assignment_id: string|null; job_id: string|null; job_status: string|null; error: string|null; colab_url: string|null; transport: 'google'|'desktop'|null };
 type Catalog = { task: Task; available: boolean; reason: string };
@@ -17,6 +18,7 @@ export default function GuidedWorkflow({ onBlocked }: { onBlocked?: (value: bool
   const [busy,setBusy] = useState(false), [editing,setEditing] = useState(false), [status,setStatus] = useState('');
   const [preset,setPreset] = useState('auto'), [checkpoint,setCheckpoint] = useState(''), [confidence,setConfidence] = useState(0.25);
   const [checkpointName,setCheckpointName] = useState('');
+  const [editorMode, setEditorMode] = useState<'m49'|'cvat'|null>(null);
   const [google,setGoogle] = useState<{ configured: boolean; connected: boolean }>({configured:false,connected:false});
   const [authUrl,setAuthUrl] = useState('');
   const consent = useRef<AbortController|null>(null);
@@ -117,18 +119,18 @@ export default function GuidedWorkflow({ onBlocked }: { onBlocked?: (value: bool
       }
     });
   }
-  useEffect(() => { setPreset('auto'); setCheckpoint(''); setCheckpointName(''); }, [run?.project.task]);
+  useEffect(() => { setPreset('auto'); setCheckpoint(''); setCheckpointName(''); setEditorMode(null); }, [run?.id]);
   const is3d = run?.project.task === 'detection_3d';
   const isSegmentation = run?.project.task === 'instance_segmentation';
   const step = !run ? 0 : ({manual:1,ai:2,assisted:3,results:4}[run.phase]);
   return <>
-    <header><div className="eyebrow">MỘT LƯỢT · CÙNG 10 MẪU</div><h1>Người · AI · Người + AI</h1>
-      <p className="muted">Gán nhãn từ đầu, chạy AI độc lập, rồi rà soát nhãn AI. Kết quả so sánh cả ba trên cùng ground truth.</p></header>
+    <header className="studio-header"><div className="eyebrow"><span className="eyebrow-dot"/> MỘT LƯỢT · CÙNG 10 MẪU</div><h1>Người. AI.<br/><span>Cùng tạo nên khác biệt.</span></h1>
+      <p className="muted">Gán nhãn từ đầu, chạy AI độc lập, rồi rà soát nhãn AI.<br/>So sánh cả ba phương pháp trên cùng bộ nhãn chuẩn.</p><div className="header-art" aria-hidden="true"><div className="scan-frame"><span/><span/><span/></div><b>COMPARE & CREATE</b></div></header>
     <ol className="flow-steps">{['Tác vụ','Người gán nhãn','AI gán nhãn','Người sửa AI','Kết quả'].map((label,i)=><li key={label} className={i===step?'current':i<step?'done':''} aria-current={i===step?'step':undefined}>{i+1}. {label}</li>)}</ol>
     <p role="status">{status}</p>
     {!run && <>
       {runs.length>0 && <section className="panel"><h2>Tiếp tục lượt đã lưu</h2><div className="fields">{runs.map(r=><button disabled={busy} className="secondary" key={r.id} onClick={()=>void action(async()=>setRun(await postJSON<Run>(`/guided/${r.id}/next`,{})))}>{r.dataset.toUpperCase()} · {r.annotator} · {r.id.slice(0,8)}</button>)}</div></section>}
-      <section className="panel"><h2>1 · Chọn tác vụ</h2><div className="task-options">{catalog.map(t=><article key={t.task}><button disabled={busy||!t.available} className={task===t.task?'':'secondary'} onClick={()=>setTask(t.task)}>{taskNames[t.task]}</button><p className="muted">{t.reason}</p></article>)}</div>
+      <section className="panel task-panel"><div className="section-heading"><div><span className="section-kicker">BẮT ĐẦU KHÁM PHÁ</span><h2>Chọn không gian gán nhãn</h2></div><span className="section-badge">01 / 05</span></div><div className="task-options">{catalog.map((t,i)=><article key={t.task} className={`task-card task-${i}${task===t.task?' selected':''}${!t.available?' unavailable':''}`}><div className="task-art" aria-hidden="true"><svg viewBox="0 0 100 64" fill="none">{i===0?<><rect x="12" y="12" width="48" height="35" rx="5"/><rect x="40" y="26" width="46" height="28" rx="5"/><path d="M9 7h12M9 7v12M91 57H79M91 57V45"/></>:i===1?<><path d="M14 39 27 12 60 8 85 27 73 54 38 58Z"/><path d="m27 12 11 46 22-50 13 46-59-15 71-12"/><circle cx="27" cy="12" r="3"/><circle cx="73" cy="54" r="3"/></>:<><path d="m50 5 32 17v27L50 62 18 46V20Z"/><path d="m18 20 32 17 32-15M50 37v25M50 5v26"/><path d="m26 16 31 17M65 13 33 29"/></>}</svg><span>0{i+1}</span></div><button disabled={busy||!t.available} aria-pressed={task===t.task} className={task===t.task?'':'secondary'} onClick={()=>setTask(t.task)}>{taskNames[t.task]}<span aria-hidden="true">{task===t.task?'✓':'↗'}</span></button><p className="muted">{t.reason}</p></article>)}</div>
         <label>Người thực hiện<input disabled={busy} value={annotator} onChange={e=>setAnnotator(e.target.value)} placeholder="Tên dùng cho cả hai lượt Manual/Assisted"/></label>
         <p className="muted">Tự lấy ngẫu nhiên 10 mẫu không trùng theo tác vụ, lớp car (ảnh hoặc point cloud LiDAR). Giữ nguyên 10 mẫu cho cả ba kiểu; tải lại trang không bốc mẫu lại. Timer tự đo trong editor.</p>
         <button disabled={busy||!task||!annotator.trim()} onClick={()=>void start()}>Lấy ngẫu nhiên 10 mẫu và bắt đầu</button></section>
@@ -140,7 +142,8 @@ export default function GuidedWorkflow({ onBlocked }: { onBlocked?: (value: bool
     {run && (run.phase==='manual'||run.phase==='assisted') && <>
       <h2>{run.phase==='manual'?'Người tự gán nhãn':'Người kiểm tra và sửa nhãn AI'} · mẫu {(run.phase==='manual'?run.manual_completed:run.assisted_completed)+1}/10</h2>
       <p className="muted">{run.phase==='manual'?'Gán nhãn từ dữ liệu gốc. Nhãn AI được mở sau khi hoàn thành đủ 10 mẫu.':'Kiểm tra nhãn AI trên cùng mẫu. Sửa nếu cần rồi chốt, kể cả khi giữ nguyên kết quả AI.'}</p>
-      {run.assignment_id ? <AnnotationWorkspace key={run.assignment_id} project={run.project} assets={[]} labels={[]} fixedAssignmentId={run.assignment_id} onSaved={emptySave} onBlocked={setEditing} onFinalized={next}/> : <button onClick={()=>void action(next)}>Mở mẫu tiếp theo</button>}
+      {!is3d && <div className="fields"><button disabled={busy||editing} className={editorMode==='m49'?'':'secondary'} onClick={()=>setEditorMode('m49')}>Dùng trình gán nhãn M49</button><button disabled={busy||editing} className={editorMode==='cvat'?'':'secondary'} onClick={()=>setEditorMode('cvat')}>Kết nối CVAT trên máy</button></div>}
+      {run.assignment_id ? (!is3d && editorMode==='cvat' ? <CvatWorkspace key={run.assignment_id} assignmentId={run.assignment_id} onFinalized={next} onBlocked={setEditing}/> : (is3d || editorMode==='m49') ? <AnnotationWorkspace key={run.assignment_id} project={run.project} assets={[]} labels={[]} fixedAssignmentId={run.assignment_id} onSaved={emptySave} onBlocked={setEditing} onFinalized={next}/> : <p>Chọn công cụ gán nhãn để bắt đầu mẫu này.</p>) : <button onClick={()=>void action(next)}>Mở mẫu tiếp theo</button>}
     </>}
     {run?.phase==='ai' && <section className="panel"><h2>3 · AI gán nhãn độc lập</h2>
       {(!run.job_id || run.transport === 'google') && <div>
@@ -158,7 +161,11 @@ export default function GuidedWorkflow({ onBlocked }: { onBlocked?: (value: bool
         <div className="fields"><label>Model<select value={preset} onChange={e=>setPreset(e.target.value)}>{is3d ? <option value="auto">PointPillars · KITTI car · GPU</option> : <><option value="auto">Tự chọn · {isSegmentation ? 'YOLO11s-seg' : 'YOLO11s'}</option><option value="yolo11n">{isSegmentation ? 'YOLO11n-seg' : 'YOLO11n'} · nhỏ</option><option value="yolo11s">{isSegmentation ? 'YOLO11s-seg' : 'YOLO11s'}</option><option value="yolo11m">{isSegmentation ? 'YOLO11m-seg' : 'YOLO11m'} · lớn hơn</option><option value="custom">Tải checkpoint .pt của tôi</option></>}</select></label>
         <label>Ngưỡng confidence<input type="number" min={0.01} max={1} step={0.05} value={confidence} onChange={e=>setConfidence(e.target.valueAsNumber)}/></label></div>
         {!is3d && preset==='custom' && <label>Checkpoint Ultralytics phù hợp tác vụ (tối đa 512 MiB)<input disabled={!google.connected} type="file" accept=".pt" onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void action(async()=>{
+          setCheckpoint('');setCheckpointName('');
+          if(!file.name.toLowerCase().endsWith('.pt') || file.size===0 || file.size>512*1024*1024) throw new Error('Chọn checkpoint .pt không rỗng, tối đa 512 MiB.');
+          setStatus('Đang tải model lên backend trên máy…');
           const result=await upload<{checkpoint:string}>('/colab/google/checkpoints',file);setCheckpoint(result.checkpoint);setCheckpointName(file.name);
+          setStatus('Đã nhận model trên máy. Bấm Đồng ý tải notebook để gửi model cùng dữ liệu lên Drive. Colab sẽ kiểm tra model khi chạy.');
         });}}/>{checkpointName}</label>}
         <p className="muted">Colab cá nhân cần bạn bấm Run all và xác nhận quyền Google trong notebook. Ảnh, mã lượt, model và kết quả được chuyển tự động. Với checkpoint riêng, chỉ chọn tệp bạn tin cậy.</p>
         <p>Sau khi bạn đồng ý, web tự tải notebook .ipynb và {run.total} mẫu lên Drive của bạn rồi mở Colab. Không cần sao chép hay gửi URL.</p>

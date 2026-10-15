@@ -20,10 +20,13 @@ from fastapi.responses import HTMLResponse
 
 SCOPE = 'https://www.googleapis.com/auth/drive.file'
 API = 'https://www.googleapis.com/drive/v3/'
-REDIRECT = 'http://127.0.0.1:8000/api/colab/google/callback'
 LOCK = RLock()
 PENDING = {}
 router = APIRouter(prefix='/api/colab/google')
+
+
+def redirect_uri():
+    return f"http://127.0.0.1:{os.getenv('M49_BACKEND_PORT', '8000')}/api/colab/google/callback"
 
 
 def private_dir():
@@ -61,7 +64,7 @@ class GoogleError(RuntimeError):
             'SERVICE_DISABLED': 'Google Drive API chưa được bật trong project của OAuth client. Bật Google Drive API rồi kết nối lại.',
             'invalid_client': 'OAuth client không hợp lệ. Nhập lại JSON Desktop app tải từ Google Cloud.',
             'invalid_grant': 'Mã cấp quyền đã hết hạn hoặc đã dùng. Bấm Kết nối Google trong M49 để bắt đầu lại.',
-            'redirect_uri_mismatch': 'Địa chỉ callback không khớp OAuth client. Dùng client Desktop app với backend cổng 8000.',
+            'redirect_uri_mismatch': 'Địa chỉ callback không khớp OAuth client. Dùng OAuth client loại Desktop app và thử kết nối lại.',
             'insufficientPermissions': 'Google chưa cấp đủ quyền Drive. Kết nối lại và chọn quyền quản lý tệp của ứng dụng.',
             'ACCESS_TOKEN_SCOPE_INSUFFICIENT': 'Google chưa cấp đủ quyền Drive. Kết nối lại và chọn quyền quản lý tệp của ứng dụng.',
             'admin_policy_enforced': 'Quản trị viên tài khoản Google đang chặn quyền ứng dụng.',
@@ -96,7 +99,7 @@ def http(method, url, data=None, headers=None, limit=1024*1024):
         if exc.code == 308:  # Resumable upload acknowledgement.
             return b'', dict(exc.headers)
         raise google_error(exc.code, exc.read(64*1024)) from None
-    except (URLError, TimeoutError) as exc:
+    except (URLError, OSError) as exc:
         raise RuntimeError('Không kết nối được Google Drive; ứng dụng sẽ thử lại.') from exc
 
 
@@ -150,7 +153,7 @@ def connect(request: WebRequest):
         PENDING.clear()
         PENDING[state] = (time.time()+600, verifier)
         return {'url': 'https://accounts.google.com/o/oauth2/v2/auth?'+urlencode(dict(
-            client_id=client['client_id'], redirect_uri=REDIRECT, response_type='code', scope=SCOPE,
+            client_id=client['client_id'], redirect_uri=redirect_uri(), response_type='code', scope=SCOPE,
             access_type='offline', prompt='consent', state=state,
             code_challenge=challenge, code_challenge_method='S256'))}
 
@@ -167,7 +170,7 @@ def callback(state: str = '', code: str = '', error: str = ''):
         stage = 'Đổi mã cấp quyền Google'
         try:
             token = token_request({**client, 'code': code, 'code_verifier': pending[1],
-                                   'redirect_uri': REDIRECT, 'grant_type': 'authorization_code'})
+                                   'redirect_uri': redirect_uri(), 'grant_type': 'authorization_code'})
             if SCOPE not in token.get('scope', '').split():
                 raise HTTPException(400, 'Chưa cấp quyền Drive. Bấm Kết nối Google lại và chọn quyền quản lý tệp của ứng dụng trên màn hình Google.')
             if not token.get('refresh_token'):
@@ -248,32 +251,52 @@ def media(file_id, limit):
 
 def upload_file(file_id, name, parent, source=None, mime='application/octet-stream'):
     # IDs are reserved and persisted before upload: retry/restart cannot create duplicates.
+    total = source.stat().st_size if source else 0
+    checksum = None
+    if total:
+        with source.open('rb') as stream:
+            checksum = hashlib.file_digest(stream, 'md5').hexdigest()
+    existing = None
     try:
-        drive('GET', f'files/{file_id}?fields=id')
-        return
+        existing = drive('GET', f'files/{file_id}?fields=id,size,md5Checksum')
+        if not total or (str(existing.get('size')) == str(total) and existing.get('md5Checksum') == checksum):
+            return
     except GoogleError as exc:
         if exc.status != 404:
             raise
     metadata = dict(id=file_id, name=name, parents=[parent] if parent else [], mimeType=mime)
-    if source is None or source.stat().st_size == 0:
+    if not total:
         drive('POST', 'files', metadata)
         return
     headers = {'Authorization': 'Bearer '+credentials()['access_token'], 'Content-Type': 'application/json',
-               'X-Upload-Content-Type': mime, 'X-Upload-Content-Length': str(source.stat().st_size)}
-    _, response_headers = http('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', json.dumps(metadata).encode(), headers)
+               'X-Upload-Content-Type': mime, 'X-Upload-Content-Length': str(total)}
+    upload_url = 'https://www.googleapis.com/upload/drive/v3/files'
+    if existing:
+        upload_url += '/'+file_id
+        metadata = {'name': name, 'mimeType': mime}
+    _, response_headers = http('PATCH' if existing else 'POST', upload_url+'?uploadType=resumable', json.dumps(metadata).encode(), headers)
     location = next(v for k, v in response_headers.items() if k.lower() == 'location')
     parsed = urlparse(location)
     if parsed.scheme != 'https' or not (parsed.hostname or '').endswith('.googleapis.com'):
         raise ValueError('Địa chỉ tải lên Google không hợp lệ')
-    total, offset = source.stat().st_size, 0
+    offset = 0
     with source.open('rb') as stream:
-        while True:
+        while offset < total:
+            stream.seek(offset)
             chunk = stream.read(8*1024*1024)
-            content_range = f'bytes {offset}-{offset+len(chunk)-1}/{total}' if total else 'bytes */0'
-            http('PUT', location, chunk, {'Content-Type': mime, 'Content-Range': content_range})
-            offset += len(chunk)
-            if offset >= total:
-                break
+            if not chunk:
+                raise ValueError('Tệp tải lên đã thay đổi; thử lại với tệp gốc')
+            content_range = f'bytes {offset}-{offset+len(chunk)-1}/{total}'
+            _, result_headers = http('PUT', location, chunk, {'Content-Type': mime, 'Content-Range': content_range,
+                'Authorization': 'Bearer '+credentials()['access_token']})
+            accepted = next((v for k, v in result_headers.items() if k.lower() == 'range'), None)
+            next_offset = int(accepted.rsplit('-', 1)[1])+1 if accepted else offset+len(chunk)
+            if not offset < next_offset <= offset+len(chunk):
+                raise ValueError('Google chưa nhận đủ khối dữ liệu; sẽ thử tải lại')
+            offset = next_offset
+    uploaded = drive('GET', f'files/{file_id}?fields=id,size,md5Checksum')
+    if str(uploaded.get('size')) != str(total) or uploaded.get('md5Checksum') != checksum:
+        raise ValueError('Tệp trên Drive chưa khớp dung lượng/checksum; sẽ thử tải lại')
 
 
 def job_info(job):
@@ -357,6 +380,12 @@ def sync_job(job):
         raise ValueError('Kết nối lại đúng tài khoản Google đã gửi lượt này')
     if not state['uploaded']:
         request = read_json(folder/'request.json')
+        if request['model'].get('custom'):
+            checkpoint = Path(job.root)/request['model']['checkpoint']
+            with checkpoint.open('rb') as stream:
+                actual_hash = hashlib.file_digest(stream, 'sha256').hexdigest()
+            if actual_hash != request['model']['sha256']:
+                raise ValueError('Checkpoint trên máy đã thay đổi sau khi tạo lượt; cần khôi phục đúng tệp model.')
         keys = ['folder', 'assets', 'request', 'notebook'] + ['asset:'+n for n in job.manifest]
         keys += ['output:'+n for n in ('predictions.json', 'timing.json', 'environment.txt', 'result.ready.json')]
         if request['model'].get('custom'):

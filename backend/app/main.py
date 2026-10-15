@@ -214,6 +214,8 @@ from .benchmark import router as benchmark_router
 app.include_router(benchmark_router)
 from .cvat import router as cvat_router
 app.include_router(cvat_router)
+from .cvat_local import router as cvat_local_router
+app.include_router(cvat_local_router)
 from .datasets import router as datasets_router
 from .colab_sync import router as colab_router
 app.include_router(datasets_router)

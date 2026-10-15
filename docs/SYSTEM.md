@@ -1,117 +1,172 @@
-# Mô tả hệ thống M49
-
-Tài liệu mô tả hành vi hiện có. Cách cài và trạng thái kiểm chứng ở [README](../README.md); dữ liệu, Google và thao tác ở [hướng dẫn sử dụng](GUIDED_WORKFLOW.md).
+# Cấu trúc hệ thống và công thức đánh giá
 
 <a id="architecture"></a>
 
-## Kiến trúc và lưu trữ
+## 1. Cấu trúc hệ thống
 
-Frontend React/TypeScript chạy qua Vite hoặc Nginx, gọi API FastAPI. Backend dùng SQLModel với SQLite local hoặc PostgreSQL qua Docker. Ảnh, point cloud và các tệp làm việc nằm trong storage; model AI chạy riêng trên Colab.
+M49 so sánh người tự gán nhãn, AI và người chỉnh sửa nhãn AI trên cùng bộ 10 mẫu. Mỗi lượt thuộc một tác vụ: hộp 2D, phân vùng polygon hoặc hộp 3D LiDAR.
 
-- `Project`: một tác vụ và danh sách lớp.
-- `Asset`: tài nguyên có tên duy nhất trong dự án, đường dẫn lưu nội bộ và metadata kích thước.
-- `LabelSet`: snapshot nhãn với nguồn ground_truth, ai, manual hoặc assisted. Assisted trỏ tới bản AI cùng dự án bằng parent_id.
-- `Experiment`: cố định ground truth, danh sách mẫu và ngưỡng IoU.
-- `Assignment`: một người, một mẫu, một chế độ; draft/final trỏ tới snapshot riêng. Revision ngăn ghi đè thay đổi cũ, trả 409 khi xung đột.
-- `AnnotationEvent`: sự kiện timer, lưu và chốt; chưa ghi từng thay đổi hình học.
-- `GuidedRun`: tiến độ luồng 10 Manual → AI → 10 Assisted → kết quả.
-- `ColabJob`: cấu hình model, manifest, transport, trạng thái và bản AI đã nhập.
+```text
+Trình duyệt (React / TypeScript)
+              │
+              ▼
+Backend (FastAPI / SQLModel)
+    ├── SQLite: dự án, nhãn, nhiệm vụ, thời gian, lượt chạy
+    ├── Storage: ảnh, point cloud, tệp làm việc
+    ├── CVAT local: tạo task và nhận nhãn 2D/polygon qua REST API
+    └── Google Drive ↔ Colab: dữ liệu đầu vào và kết quả AI
+```
 
-Editor không trả payload ground truth. Lưu nháp/chốt tạo bản nhãn riêng và không ghi đè bản AI gốc. Frontend có undo/redo và autosave debounce 900 ms.
+Frontend cung cấp trình gán nhãn và bảng kết quả. Backend quản lý dữ liệu, đo thời gian, kiểm tra nhãn và tính điểm. Colab chạy YOLO11 cho 2D/SEG hoặc PointPillars cho 3D.
 
-Biến môi trường chính: `DATABASE_URL`, `STORAGE_DIR`, `M49_TEST20_DIR`, `CORS_ORIGINS`. Mặc định khi chạy từ backend là `backend/m49.db`, `backend/storage/`; bộ mẫu nằm ở `data/test20/` từ gốc repo.
+### Các thư mục chính
 
-Database dùng create_all, chưa có migration nâng cấp bảng cũ. File và database không có giao dịch phân tán hay tác vụ quét file mồ côi sau crash. Sao lưu khi backend đã dừng trước khi đổi cấu trúc dữ liệu.
+```text
+backend/app/
+  main.py               API dự án, tài nguyên và nhập nhãn
+  models.py             Mô hình lưu trữ
+  schemas.py            Định dạng và kiểm tra dữ liệu
+  guided.py             Điều phối lượt 10 mẫu
+  benchmark.py          Nhiệm vụ, timer, tổng hợp điểm, xuất CSV
+  evaluation/metrics.py IoU, ghép nhãn và chỉ số đánh giá
+  colab_google.py       Kết nối Google và gửi notebook
+  colab_sync.py         Đồng bộ kết quả AI
+  cvat_local.py         Kết nối CVAT trên máy và đồng bộ nhãn từng mẫu
+frontend/src/features/
+  annotation/           Trình gán nhãn ảnh và point cloud
+  GuidedWorkflow.tsx    Giao diện luồng 10 mẫu
+  Experiments.tsx       Bảng kết quả
+colab/                  Notebook và mã trao đổi dữ liệu
+scripts/                Chuẩn bị dữ liệu, sinh notebook và schema
+data/test20/            Bộ mẫu được cung cấp riêng
+```
 
-## Dữ liệu và Colab
+### Các thực thể dữ liệu
 
-Luồng 2D lấy BDD100K/KITTI; SEG đọc polygon BDD100K dạng Supervisely; 3D đọc KITTI LiDAR kèm calibration. Mỗi lượt lấy ngẫu nhiên 10 mẫu không trùng, lưu danh sách để tiếp tục đúng bộ mẫu sau khi tải lại trang.
+- `Project`: tác vụ và danh sách lớp đối tượng.
+- `Asset`: ảnh hoặc point cloud, tên tệp và metadata.
+- `LabelSet`: bản nhãn chuẩn, AI, người tự gán nhãn hoặc người sửa AI. Nhãn sửa AI giữ `parent_id` trỏ về bản AI gốc.
+- `Experiment`: bộ mẫu, nhãn chuẩn và ngưỡng IoU cố định.
+- `Assignment`: nhiệm vụ của một người trên một mẫu ở một chế độ; giữ bản nháp, bản đã chốt và thời gian.
+- `AnnotationEvent`: sự kiện timer, lưu và chốt nhãn.
+- `GuidedRun`: tiến độ lượt 10 mẫu.
+- `ColabJob`: cấu hình, danh sách mẫu và trạng thái lượt AI.
 
-Google OAuth Desktop dùng PKCE/state với callback localhost:8000. M49 xin quyền drive.file; token chỉ lưu local. Notebook dùng xác thực riêng của Colab và không chứa token M49.
+### Luồng dữ liệu
 
-Backend chỉ cho gửi AI sau đủ 10 Manual. Request cố định mẫu, lớp, model và checksum; không chứa ground truth hoặc Manual. 3D gửi thêm thông tin camera/calibration để lọc cùng phạm vi đánh giá.
+1. Chọn 10 mẫu và cố định bộ mẫu cùng nhãn chuẩn cho lượt thử nghiệm.
+2. Người dùng tự gán nhãn và chốt đủ 10 mẫu. Trình gán nhãn không hiển thị nhãn chuẩn hoặc dự đoán AI ở bước này.
+3. Backend gửi đầu vào, calibration cần thiết và cấu hình model qua Drive để Colab chạy. Nhãn chuẩn và nhãn người không được gửi.
+4. Backend kiểm tra mã lượt, checksum, định dạng và đủ mẫu trước khi nhận kết quả AI.
+5. Người dùng sửa và chốt nhãn AI. Bản AI gốc được giữ nguyên.
+6. Backend so sánh từng phương pháp với nhãn chuẩn, tổng hợp điểm và thời gian.
 
-ID file Drive được lưu trước upload để retry không tạo bản trùng. Mỗi job gắn với tài khoản gửi ban đầu. Notebook ghi dự đoán và marker hoàn tất; backend kiểm tra mã lượt, checksum, schema và đủ mẫu rồi nhập một lần. Trạng thái awaiting_colab chỉ có nghĩa chờ chạy/chờ kết quả, không xác nhận runtime đang chạy.
+### Kết nối CVAT local
 
-Model mặc định là YOLO11s, YOLO11s-seg và PointPillars KITTI theo tác vụ. 3D đánh giá car có tâm hộp trong FOV camera, x thuộc [0, 69.12), y thuộc [-39.68, 39.68). Đây là giao thức pilot M49, không phải KITTI AP độc lập.
+Backend kết nối CVAT đã chạy trên localhost bằng Personal Access Token. Mỗi nhiệm vụ 2D/SEG tương ứng một task CVAT có một ảnh. Nguồn nhãn ban đầu là bản nháp của nhiệm vụ, bản AI gốc ở chế độ sửa AI hoặc danh sách rỗng ở chế độ tự gán nhãn; không gửi ground truth.
+
+M49 lưu liên kết nhiệm vụ với máy chủ, tài khoản, task và revision. Khi nhận nhãn, backend kiểm tra tên ảnh, kích thước, frame, lớp và hình học, sau đó chốt bằng giao dịch dữ liệu. Nhiệm vụ đã thay đổi revision hoặc đã chốt không được ghi đè. Chỉ hỗ trợ Shape rectangle không xoay và polygon đơn; Track, Tag, mask và 3D không thuộc luồng kết nối này.
+
+Tham chiếu: [CVAT Tasks API](https://docs.cvat.ai/docs/api_sdk/sdk/reference/apis/tasks-api/) và [Personal Access Tokens](https://docs.cvat.ai/docs/api_sdk/access_tokens/).
+
+### Chuyển model riêng sang Colab
+
+Checkpoint `.pt` được lưu trên backend bằng tên riêng và ghi SHA-256 vào request của lượt AI. Backend kiểm tra lại SHA-256 trước khi gửi, tải theo từng khối và đối chiếu dung lượng/MD5 của tệp trên Drive. Tệp tải dở được tải lại với cùng ID.
+
+Notebook tải model theo ID Drive đã gắn với lượt chạy, kiểm tra SHA-256 trước khi nạp, rồi kiểm tra tác vụ và các lớp. Kiểm tra định dạng model thực tế diễn ra trên Colab; backend không nạp hoặc thực thi checkpoint. Nhận tệp thành công trên backend không đồng nghĩa inference thành công.
 
 <a id="data-contract"></a>
 
-## Hợp đồng dữ liệu M49
+## 2. Cấu trúc nhãn
 
-Nguồn thực thi là [schemas.py](../backend/app/schemas.py), bản xuất là [label-bundle.schema.json](label-bundle.schema.json). Chạy `python scripts/export_schema.py` từ gốc repo để sinh lại.
+Định dạng được khai báo trong [schemas.py](../backend/app/schemas.py) và [JSON schema](label-bundle.schema.json).
 
-Bundle gồm schema_version 1.0, task, name, annotator, parent_id, run và samples. Trường run lưu model, checkpoint, GPU, library_version và thời gian; giá trị chưa đo để null. Mỗi sample có asset_name khớp chính xác tên tài nguyên và danh sách objects.
+Một bộ nhãn chứa tác vụ, tên, người thực hiện, nguồn AI liên quan, thông tin lượt chạy và danh sách mẫu. Mỗi mẫu chứa `asset_name`, danh sách `objects` và thời gian nếu có.
 
-Object gồm id duy nhất trong mẫu, category thuộc lớp dự án, geometry và confidence. Nhãn AI phải có confidence từ 0 đến 1; nhãn người có thể để null. Danh sách objects rỗng biểu thị mẫu đã gán nhãn nhưng không có đối tượng, khác với thiếu sample hoặc Assignment chưa chốt.
+Mỗi đối tượng có ID duy nhất trong mẫu, lớp, hình học và confidence. Nhãn AI phải có confidence từ 0 đến 1. Danh sách đối tượng rỗng nghĩa là mẫu đã gán nhãn nhưng không có đối tượng; khác với mẫu thiếu kết quả hoặc nhiệm vụ chưa chốt.
 
-### Tọa độ và hình học
+- **Hộp 2D:** `xyxy = [x1, y1, x2, y2]`, đơn vị pixel ảnh gốc; x sang phải, y xuống. Yêu cầu x2 > x1, y2 > y1.
+- **Polygon:** danh sách ít nhất 3 đỉnh ở tọa độ ảnh gốc, không tự giao; chỉ hỗ trợ polygon đơn, không có lỗ hoặc nhiều vùng rời.
+- **Hộp 3D:** tâm hình học `[x, y, z]`, kích thước `[dài, rộng, cao]` và yaw. Hệ LiDAR: x tiến, y trái, z lên; đơn vị mét, yaw tính bằng radian quanh trục z.
 
-- **Box 2D:** `{"kind":"bbox2d","xyxy":[x1,y1,x2,y2]}`. Pixel ảnh gốc, x sang phải, y xuống; x2 > x1 và y2 > y1. Tọa độ sau resize/letterbox phải chuyển về ảnh gốc.
-- **SEG:** `{"kind":"polygon","points":[[x,y],...]}`. Từ 3 đến 1.000 đỉnh; không lặp điểm đầu ở cuối. Từ chối điểm trùng, tự giao/tự chạm, cạnh chồng hoặc diện tích 0. Chỉ một polygon đơn, chưa hỗ trợ holes, multipart hay RLE.
-- **Cuboid 3D:** `{"kind":"cuboid3d","center":[x,y,z],"size_lwh":[l,w,h],"yaw":0,"frame":"lidar"}`. Đơn vị mét, tâm hình học, x tiến/y trái/z lên, yaw radian quanh +z; l/w/h dương.
+## 3. Tính độ chồng khớp
 
-KITTI camera labels có tâm đáy và hệ tọa độ khác; adapter dùng calibration để chuyển tâm/hướng về LiDAR. Cuboid M49 chỉ có yaw, bỏ roll/pitch nhỏ của camera khi biểu diễn hướng. Chưa có giao diện ghép ảnh camera với LiDAR.
+### Hộp 2D
 
-### API và nhập dữ liệu
+`IoU = diện tích giao / diện tích hợp`
 
-API tương tác tại /docs là danh sách endpoint hiện hành. Các nhóm chính: projects/assets/label-sets, experiments/assignments, guided, datasets, cvat và colab.
+Diện tích hộp bằng `(x2 − x1) × (y2 − y1)`, không cộng 1.
 
-Importer BDD100K/KITTI và CVAT được giữ qua API/script. CVAT hỗ trợ COCO box 2D và polygon đơn; thời gian nhập tay được ghi nguồn riêng. `scripts/import_folder.py` đọc assets/ground_truth/ai, upload tuần tự; lỗi không rollback toàn bộ những lần upload đã thành công. Bỏ qua asset trùng tên không có nghĩa đã kiểm tra nội dung giống nhau.
+### Phân vùng polygon
+
+Polygon được chuyển thành mask ở độ phân giải ảnh gốc theo tâm pixel.
+
+- `IoU = |P ∩ G| / |P ∪ G|`
+- `Dice = 2 × |P ∩ G| / (|P| + |G|)`
+
+P là vùng dự đoán, G là vùng chuẩn. Polygon tạo mask rỗng bị từ chối.
+
+### Hộp 3D
+
+`Thể tích giao = diện tích giao hai đáy xoay yaw × độ cao giao`
+
+`IoU3D = thể tích giao / (thể tích A + thể tích B − thể tích giao)`
+
+Phép tính dùng thể tích 3D.
 
 <a id="scoring"></a>
 
-## Công thức chấm điểm
+## 4. Ghép nhãn và tính điểm
 
-Code ở [metrics.py](../backend/app/evaluation/metrics.py) và [benchmark.py](../backend/app/benchmark.py). Chấm độc lập từng tác vụ, lớp và mẫu, so với ground truth cố định. Chỉ nhãn người đã chốt được chấm.
+Code tính toán nằm trong [metrics.py](../backend/app/evaluation/metrics.py); phần tổng hợp ở [benchmark.py](../backend/app/benchmark.py).
 
-### IoU và Dice
+Nhãn được ghép độc lập theo từng mẫu và từng lớp. Một cặp hợp lệ phải cùng lớp và có IoU ≥ ngưỡng của thử nghiệm, mặc định 0,5. Mỗi nhãn chỉ được ghép một lần. Thuật toán ưu tiên tối đa số cặp hợp lệ, sau đó tối đa tổng IoU.
 
-- **Box 2D:** IoU = diện tích giao / diện tích hợp. Diện tích dùng (x2 − x1) × (y2 − y1), không cộng 1.
-- **SEG:** rasterize polygon ở kích thước ảnh gốc; mask IoU = |P ∩ G| / |P ∪ G|. Dice = 2|P ∩ G| / (|P| + |G|). Polygon rasterize thành mask rỗng bị từ chối.
-- **3D:** giao thể tích = diện tích giao hai đáy xoay yaw × độ cao giao. IoU3D = Vgiao / (VA + VB − Vgiao). Đây là IoU thể tích, không phải chỉ IoU hình chiếu BEV.
+### Số lượng đối tượng
 
-Ví dụ hai box 10 × 10 lệch ngang 5 pixel có IoU = 50 / 150 = 1/3. Hai cuboid cùng tâm kích thước 4 × 2 × 2, lệch yaw 90° cũng có IoU3D = 1/3.
+- **Tìm đúng (TP):** số cặp ghép hợp lệ.
+- **Vẽ thừa hoặc sai (FP):** số nhãn dự đoán không ghép được.
+- **Bỏ sót (FN):** số đối tượng chuẩn không được ghép.
+- **Tổng đối tượng chuẩn:** TP + FN.
+- **Tổng nhãn dự đoán:** TP + FP.
 
-### Ghép nhãn và chỉ số
+Một hộp vẽ sai vị trí có thể làm tăng cả FP và FN: hộp dự đoán không ghép được, còn đối tượng chuẩn vẫn bị bỏ sót. Hai hộp trùng nhau cùng dự đoán một đối tượng chỉ có tối đa một hộp được tính là tìm đúng.
 
-Chỉ ghép cùng lớp và IoU ≥ ngưỡng của Experiment. Ghép một–một theo thứ tự ưu tiên: tối đa số cặp hợp lệ, sau đó tối đa tổng IoU. Không dùng greedy theo confidence cho điểm bộ nhãn cuối.
+### Các chỉ số
 
-- TP: số cặp đã ghép.
-- FP: dự đoán không được ghép.
-- FN: ground truth không được ghép.
-- Precision = TP / (TP + FP).
-- Recall = TP / (TP + FN).
-- F1 = 2TP / (2TP + FP + FN).
-- IoU trung bình: tổng IoU các cặp ghép / TP.
+- **Tỷ lệ nhãn đúng (Precision):** TP / (TP + FP).
+- **Mức độ đầy đủ (Recall):** TP / (TP + FN).
+- **Điểm F1:** 2TP / (2TP + FP + FN).
+- **Độ khớp các nhãn đúng:** tổng IoU của các cặp ghép / TP.
 
-Mẫu số bằng 0 trả null và giao diện hiện N/A. Cả hai bộ nhãn rỗng không được tự gán F1 = 1. Ví dụ một ground truth có hai dự đoán trùng hoàn toàn: TP = 1, FP = 1, FN = 0, F1 = 2/3.
+Mẫu số bằng 0 trả `null`, giao diện hiện N/A. Hai bộ nhãn cùng rỗng không được tự gán F1 = 100%. IoU trung bình chỉ tính trên các cặp ghép đúng, không phản ánh số đối tượng bị bỏ sót.
 
-Điểm tổng dùng tổng TP/FP/FN trên các mẫu đã hoàn thành để tính micro-F1. Mean IoU tổng được gia quyền theo số cặp ghép. Tỷ lệ hoàn thành được báo riêng; mẫu thiếu/chưa chốt không bị coi là dự đoán rỗng.
+### Tổng hợp cả bộ 10 mẫu
 
-### Thời gian
+Cộng TP, FP và FN của tất cả mẫu đã hoàn thành cho từng phương pháp, rồi mới tính Precision, Recall và F1. Đây là micro-F1; không lấy trung bình phần trăm F1 của từng ảnh. IoU tổng bằng tổng IoU của mọi cặp ghép chia cho tổng TP.
 
-Timer phía server tính cả thao tác và quan sát, heartbeat mỗi 10 giây và lease 30 giây. Lease hết hạn cần resume; heartbeat muộn không tự khôi phục. Không ghi event cho từng heartbeat. Ẩn tab/mất mạng gửi pause khi có thể; không tự loại thời gian người đứng yên quan sát.
+**Tiến độ mẫu** = số mẫu đã hoàn thành / tổng số mẫu của thử nghiệm, kể cả mẫu chưa tạo nhiệm vụ. Tiến độ này khác với mức độ đầy đủ của đối tượng.
 
-Chỉ ghép Manual/Assisted của cùng người, cùng mẫu, cả hai đã chốt. Chỉ tính các chỉ số dưới đây khi mọi cặp có thời gian server đo dương:
+Chỉ nhãn người đã chốt được chấm. Mẫu đã chốt với nhãn rỗng vẫn được chấm và toàn bộ đối tượng chuẩn trong mẫu đó được tính là bỏ sót. Mẫu chưa chốt hoặc thiếu kết quả bị loại khỏi chỉ số và báo riêng ở tiến độ. Khi chưa đủ 10 mẫu, điểm là tạm tính; các phương pháp có thể đang được chấm trên các tập mẫu khác nhau.
 
-- Tiết kiệm = tổng Manual − tổng Assisted.
-- Tăng tốc = tổng Manual / tổng Assisted.
-- Tỷ lệ giảm = 1 − tổng Assisted / tổng Manual.
+## 5. Tính thời gian
 
-Số tiết kiệm âm nghĩa là Assisted chậm hơn. Thời gian AI inference, truyền dữ liệu và thiết lập không nằm trong thời gian người thao tác; inference được báo riêng. Thời gian CVAT nhập tay không được dùng để tính tăng tốc.
+Timer server cộng thời gian thao tác và quan sát. Frontend gửi heartbeat mỗi 10 giây; mỗi lần chỉ ghi nhận tối đa 30 giây kể từ mốc đang chạy. Khi lease hết hạn, người dùng cần tiếp tục timer; heartbeat muộn không tự khởi động lại.
 
-Giao diện đã bỏ Đạt/Chưa đạt. API vẫn có status/quality_not_lower và CSV còn time_goal để tương thích: passed yêu cầu đủ cặp, đo được, tổng Assisted nhanh hơn và F1 không giảm ở từng cặp. Đây không phải điểm chất lượng tổng hợp.
+Chỉ so sánh các cặp cùng người, cùng mẫu, có cả nhãn tự làm và nhãn sửa AI đã chốt. Gọi M là tổng thời gian tự làm và A là tổng thời gian sửa AI trên các cặp đó:
 
-CSV có các cột tổng thời gian lặp lại trên từng dòng mẫu; không cộng những cột tổng đó qua các dòng. active_seconds là thời gian riêng của nhiệm vụ.
+- **Tiết kiệm:** M − A.
+- **Tăng tốc:** M / A.
+- **Tỷ lệ giảm:** 1 − A / M.
 
-## Giới hạn vận hành
+Chỉ tính ba chỉ số này khi mọi cặp đều có thời gian server đo dương. Thời gian nhập tay từ CVAT không được dùng để tính tăng tốc: kết nối CVAT ghi thời gian từng mẫu với nguồn `declared_cvat_sample`; nhập tệp COCO ghi tổng thời gian chia đều với nguồn `declared_total_uniformly_distributed`. Số tiết kiệm âm nghĩa là sửa AI chậm hơn tự làm.
 
-- Một người, một tab gán nhãn, một backend worker local. Chưa có đăng nhập/phân quyền; API quản trị vẫn đọc được ground truth, chưa phù hợp benchmark mù nhiều người.
-- Upload tối đa 32 MiB mỗi asset; checkpoint riêng tối đa 512 MiB.
-- Tối đa 20 mẫu/Experiment, 40 Assignment khi chấm, 3 AI run/dự án và một yêu cầu chấm đồng thời trong mỗi process.
-- Tối đa 80 đối tượng mỗi phía/mẫu. SEG tối đa 4 triệu pixel/ảnh và 32 triệu pixel tổng mask/mẫu.
-- Viewer lấy mẫu tối đa 60.000 điểm; vẫn cần đọc tệp point cloud vào bộ nhớ. Hỗ trợ BIN và PCD ASCII/binary, chưa hỗ trợ PCD nén.
-- Chưa có COCO/KITTI AP chính thức, tổng điểm có trọng số, báo cáo chi phí, thống kê từng thao tác sửa, khoảng tin cậy hoặc kiểm thử tải lớn.
+Thời gian AI inference được báo riêng, không cộng vào thời gian người thao tác. Các chỉ số trên chưa bao gồm truyền dữ liệu hoặc thiết lập. Trong CSV, các cột tổng thời gian được lặp trên từng dòng mẫu; không cộng lại các cột tổng này.
 
-Các giới hạn trên là giới hạn code/phạm vi vận hành, không bảo đảm một mức RAM hay độ chính xác thực nghiệm. Bộ mẫu pilot nhỏ và lịch Manual trước Assisted có thể tạo hiệu ứng nhớ; không suy rộng kết quả thành benchmark đại diện.
+## 6. Phạm vi phép đánh giá
+
+M49 đánh giá bộ nhãn cuối theo ngưỡng IoU cố định, không tính COCO/KITTI AP chính thức. Với 3D, phạm vi đánh giá gồm lớp car có tâm hộp trong góc nhìn camera, x thuộc [0; 69,12) m và y thuộc [−39,68; 39,68) m.
+
+Mỗi thử nghiệm hỗ trợ tối đa 20 mẫu, 40 nhiệm vụ và 3 bản AI trong dự án khi chấm. Mỗi mẫu có tối đa 80 đối tượng mỗi phía; SEG giới hạn 4 triệu pixel/ảnh và 32 triệu pixel tổng mask/mẫu.
+
+Bộ mẫu gồm 10 mẫu và thứ tự tự làm trước, sửa AI sau có thể tạo hiệu ứng nhớ. Phạm vi đánh giá giới hạn trong bộ mẫu được chọn, không đại diện cho toàn bộ dataset.
