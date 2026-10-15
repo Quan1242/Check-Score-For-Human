@@ -186,7 +186,7 @@ def callback(state: str = '', code: str = '', error: str = ''):
             raise HTTPException(400, f'{stage}: Google trả dữ liệu thiếu hoặc không hợp lệ. Bấm Kết nối Google để thử lại.') from None
         except OSError:
             raise HTTPException(400, f'{stage}: Không ghi được cấu hình. Kiểm tra quyền ghi thư mục storage trên máy.') from None
-    return HTMLResponse('<meta charset="utf-8"><h2>Đã kết nối Google Drive</h2><p>Đóng cửa sổ này và quay lại M49 để gửi lượt AI.</p>', headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
+    return HTMLResponse('<meta charset="utf-8"><h2>Đã kết nối Google Drive</h2><p>M49 sẽ tự tiếp tục và tải notebook nếu bạn đã chọn gửi lượt AI. Giữ web M49 mở; không cần sao chép URL này.</p>', headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
 
 
 @router.post('/disconnect')

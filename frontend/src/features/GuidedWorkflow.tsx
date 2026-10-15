@@ -5,6 +5,7 @@ import { taskNames } from '../types';
 import AnnotationWorkspace from './annotation/AnnotationWorkspace';
 import { ExperimentResults } from './Experiments';
 import '../guided.css';
+import { waitForGoogleConnection } from './googleConsent';
 
 type Run = { id: string; dataset: string; project: Project; experiment_id: string; annotator: string; phase: 'manual'|'ai'|'assisted'|'results'; manual_completed: number; assisted_completed: number; total: number; assignment_id: string|null; job_id: string|null; job_status: string|null; error: string|null; colab_url: string|null; transport: 'google'|'desktop'|null };
 type Catalog = { task: Task; available: boolean; reason: string };
@@ -18,11 +19,19 @@ export default function GuidedWorkflow({ onBlocked }: { onBlocked?: (value: bool
   const [checkpointName,setCheckpointName] = useState('');
   const [google,setGoogle] = useState<{ configured: boolean; connected: boolean }>({configured:false,connected:false});
   const [authUrl,setAuthUrl] = useState('');
+  const consent = useRef<AbortController|null>(null);
+  useEffect(() => () => consent.current?.abort(), []);
   const colabWindow = useRef<{window:Window; runId:string}|null>(null);
   useEffect(() => {
-    if (run?.colab_url && colabWindow.current?.runId === run.id && !colabWindow.current.window.closed) {
-      colabWindow.current.window.location.replace(run.colab_url);
-      colabWindow.current = null;
+    if (run?.colab_url) {
+      setStatus('Notebook đã được tải lên Drive. Mở Colab và bấm Run all để chạy AI.');
+      if (colabWindow.current?.runId === run.id) {
+        try {
+          // OAuth returns to the backend origin; only the cross-origin location setter is safe.
+          if (!colabWindow.current.window.closed) colabWindow.current.window.location.href = run.colab_url;
+        } catch { /* The notebook link below remains available if navigation is blocked. */ }
+        colabWindow.current = null;
+      }
     }
   }, [run?.colab_url, run?.id]);
   useEffect(() => {
@@ -66,29 +75,46 @@ export default function GuidedWorkflow({ onBlocked }: { onBlocked?: (value: bool
       setRun(value);setRuns(rows=>[value,...rows]);
     });
   }
-  async function connectGoogle() {
+  async function connectGoogle(sendNotebook = false) {
+    if (!run || consent.current) return;
+    const selectedRun = run.id;
+    const model = {preset, checkpoint:preset==='custom'?checkpoint:null, confidence};
     const popup = window.open('about:blank', '_blank');
-    if (popup) popup.opener = null;
-    await action(async () => {
-      try {
-        const result = await postJSON<{url:string}>('/colab/google/connect', {});
-        setAuthUrl(result.url);
-        if (popup) popup.location.replace(result.url);
-      } catch (error) { popup?.close(); throw error; }
-    });
-  }
-  async function launch() {
-    if(!run)return;
-    const popup = window.open('about:blank', '_blank');
-    colabWindow.current = popup ? {window:popup,runId:run.id} : null;
     if (popup) {
       popup.opener = null;
-      popup.document.body.textContent = 'Đang chuẩn bị notebook và ảnh trên Drive. Giữ M49 mở; Colab sẽ hiện khi tải lên xong.';
+      popup.document.body.textContent = 'Đang chuẩn bị kết nối Google…';
     }
+    const controller = new AbortController();
+    consent.current = controller;
     await action(async () => {
       try {
-        setRun(await postJSON<Run>(`/guided/${run.id}/ai/google`, {preset,checkpoint:preset==='custom'?checkpoint:null,confidence}));
-      } catch (error) { colabWindow.current?.window.close(); colabWindow.current = null; throw error; }
+        if (!google.connected) {
+          const result = await postJSON<{url:string}>('/colab/google/connect', {});
+          setAuthUrl(result.url);
+          if (popup) popup.location.replace(result.url);
+          setStatus('Đang chờ bạn đồng ý cấp quyền Google. Web sẽ tự tiếp tục sau khi được cấp quyền.');
+          await waitForGoogleConnection(() => api('/colab/google/status'), controller.signal);
+          setGoogle({configured:true, connected:true});
+          setAuthUrl('');
+        }
+        controller.signal.throwIfAborted();
+        if (sendNotebook) {
+          setStatus('Đã được cấp quyền. Đang tạo notebook và tự tải dữ liệu lên Drive…');
+          colabWindow.current = popup ? {window:popup, runId:selectedRun} : null;
+          setRun(await postJSON<Run>(`/guided/${selectedRun}/ai/google`, model));
+        } else {
+          popup?.close();
+          setStatus('Đã kết nối Google. Bạn có thể tiếp tục lượt AI.');
+        }
+      } catch (error) {
+        popup?.close();
+        colabWindow.current = null;
+        if (!controller.signal.aborted) throw error;
+        setStatus('Đã hủy chờ cấp quyền; chưa gửi notebook.');
+      } finally {
+        consent.current = null;
+        setAuthUrl('');
+      }
     });
   }
   useEffect(() => { setPreset('auto'); setCheckpoint(''); setCheckpointName(''); }, [run?.project.task]);
@@ -124,8 +150,8 @@ export default function GuidedWorkflow({ onBlocked }: { onBlocked?: (value: bool
           <p><a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">Mở cấu hình Google</a>. Tải JSON của OAuth client rồi chọn bên dưới. Sau bước này, các lượt sau chỉ cần đăng nhập/cấp quyền khi Google yêu cầu.</p>
           <label>OAuth client JSON<input disabled={busy} type="file" accept=".json" onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void action(async()=>setGoogle(await upload('/colab/google/client',file)));}}/></label>
         </details>}
-        {!google.connected && <button disabled={busy||!google.configured} onClick={()=>void connectGoogle()}>Kết nối và cấp quyền Google Drive</button>}
-        {authUrl && <p><a href={authUrl} target="_blank" rel="noreferrer">Mở cửa sổ cấp quyền nếu trình duyệt chặn popup</a></p>}
+        {!google.connected && (run.job_id || preset==='custom') && <button disabled={busy||!google.configured} onClick={()=>void connectGoogle()}>Kết nối Google để tiếp tục</button>}
+        {authUrl && <p><button className="secondary" onClick={()=>consent.current?.abort()}>Hủy chờ cấp quyền</button> <a href={authUrl} target="_blank" rel="noreferrer">Mở cửa sổ cấp quyền nếu trình duyệt chặn popup</a></p>}
         {google.connected && <button className="secondary" disabled={busy} onClick={()=>void action(async()=>setGoogle(await postJSON('/colab/google/disconnect',{})))}>Ngắt kết nối trên máy này</button>}
       </div>}
       {!run.job_id ? <fieldset disabled={busy}><p>Ứng dụng sẽ gửi đúng {run.total} {is3d ? 'point cloud và calibration' : 'ảnh gốc'} cùng cấu hình model. Nhãn Manual và ground truth không được gửi lên Colab.</p>
@@ -135,7 +161,8 @@ export default function GuidedWorkflow({ onBlocked }: { onBlocked?: (value: bool
           const result=await upload<{checkpoint:string}>('/colab/google/checkpoints',file);setCheckpoint(result.checkpoint);setCheckpointName(file.name);
         });}}/>{checkpointName}</label>}
         <p className="muted">Colab cá nhân cần bạn bấm Run all và xác nhận quyền Google trong notebook. Ảnh, mã lượt, model và kết quả được chuyển tự động. Với checkpoint riêng, chỉ chọn tệp bạn tin cậy.</p>
-        <button disabled={!google.connected||(preset==='custom'&&!checkpoint)||!Number.isFinite(confidence)||confidence<0.01||confidence>1} onClick={()=>void launch()}>Gửi {run.total} mẫu và mở Colab</button>
+        <p>Sau khi bạn đồng ý, web tự tải notebook .ipynb và {run.total} mẫu lên Drive của bạn rồi mở Colab. Không cần sao chép hay gửi URL.</p>
+        <button disabled={!google.configured||(preset==='custom'&&!checkpoint)||!Number.isFinite(confidence)||confidence<0.01||confidence>1} onClick={()=>void connectGoogle(true)}>{google.connected ? 'Đồng ý tải notebook và mở Colab' : 'Đồng ý cấp quyền và tự tải notebook'}</button>
       </fieldset> : run.transport === 'google' ? <>
         <p>{run.colab_url ? 'Notebook đã sẵn sàng. Mở Colab, bấm Runtime → Run all và cấp quyền bằng cùng tài khoản Google đã kết nối.' : 'Đang tải ảnh và chuẩn bị notebook trên Drive…'}</p>
         {run.colab_url && <p><a href={run.colab_url} target="_blank" rel="noreferrer">Mở notebook của lượt này trên Colab</a></p>}

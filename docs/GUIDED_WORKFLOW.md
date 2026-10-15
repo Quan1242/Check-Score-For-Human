@@ -50,7 +50,7 @@ Giữ ảnh gốc và tọa độ tương ứng. Chọn mẫu/cấu hình model 
 2. Cấu hình OAuth consent screen. Nếu ứng dụng External đang Testing, thêm tài khoản thực hiện vào Test users.
 3. Tạo OAuth client loại **Desktop app**, tải JSON.
 4. Tại bước AI trong M49, mở **Cấu hình kết nối Google một lần** và chọn JSON đó.
-5. Bấm **Kết nối và cấp quyền Google Drive**, đăng nhập bằng tài khoản muốn chạy Colab.
+5. Chọn model/confidence rồi bấm **Đồng ý cấp quyền và tự tải notebook**, đăng nhập bằng tài khoản muốn chạy Colab. Giữ web M49 mở: sau khi đồng ý cấp quyền, web tự tạo lượt, tải notebook `.ipynb` và dữ liệu lên Drive rồi mở Colab. Không cần gửi/dán URL. Nếu popup bị chặn, dùng liên kết cấp quyền trên web và liên kết notebook khi tải xong. Có thể hủy chờ hoặc thử lại khi phiên cấp quyền hết hạn.
 
 Backend chạy cổng 8000 trên cùng máy với trình duyệt; callback là `http://127.0.0.1:8000/api/colab/google/callback`. M49 dùng quyền `drive.file`; Colab xin quyền riêng khi chạy notebook.
 
@@ -62,7 +62,7 @@ Client/token được lưu trong `STORAGE_DIR/google-colab/`, mặc định `bac
 
 1. Chọn 2D, SEG hoặc 3D, nhập tên người thực hiện và bấm bắt đầu. Ứng dụng lấy ngẫu nhiên 10 mẫu không trùng và lưu cố định cho cả lượt.
 2. Gán nhãn từng mẫu Manual rồi **Lưu và chốt**. Timer tự bắt đầu khi mở mẫu. Ground truth và nhãn AI không hiển thị ở bước này.
-3. Sau đủ 10 Manual, kết nối Google, chọn model/confidence và bấm **Gửi 10 mẫu và mở Colab**. Với checkpoint riêng, dùng tệp phù hợp tác vụ; 3D dùng PointPillars.
+3. Sau đủ 10 Manual, chọn model/confidence và bấm **Đồng ý cấp quyền và tự tải notebook** (hoặc **Đồng ý tải notebook và mở Colab** nếu đã kết nối). Web tự gửi sau khi cấp quyền thành công. Với checkpoint riêng, kết nối Google trước, chọn tệp phù hợp tác vụ rồi đồng ý tải notebook; 3D dùng PointPillars.
 4. Trong Colab, kiểm tra đúng tài khoản Google, chọn GPU theo yêu cầu notebook, bấm **Runtime → Run all** và cấp quyền. Notebook đã có cấu hình lượt; không cần điền mã lượt hoặc đường dẫn.
 5. Giữ backend chạy để nhận kết quả. Khi đủ kết quả hợp lệ, ứng dụng mở Assisted. Kiểm tra/sửa nhãn AI rồi chốt từng mẫu, kể cả khi giữ nguyên dự đoán.
 6. Sau đủ 10 Assisted, xem điểm ba phương pháp, thời gian người thao tác và xuất CSV.
