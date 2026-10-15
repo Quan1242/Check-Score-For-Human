@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from uuid import UUID
 import secrets
 import tempfile
 from threading import RLock
@@ -23,6 +24,7 @@ SCOPE = 'https://www.googleapis.com/auth/drive.file'
 API = 'https://www.googleapis.com/drive/v3/'
 LOCK = RLock()
 PENDING = {}
+BUNDLED_CLIENT = Path(__file__).with_name('google-oauth-client.json')
 router = APIRouter(prefix='/api/colab/google')
 
 
@@ -45,6 +47,24 @@ def private_dir():
 
 def read_json(path, default=None):
     return json.loads(path.read_text(encoding='utf-8')) if path.exists() else default
+
+
+def oauth_client():
+    """Operator-managed configuration; never return it in a public response."""
+    configured = os.getenv('M49_GOOGLE_CLIENT_FILE')
+    local = private_dir()/'client.json'
+    path = Path(configured).expanduser() if configured else local if local.is_file() else BUNDLED_CLIENT
+    try:
+        value = read_json(path)
+        if value is None:
+            return None
+        value = value.get('installed', value)
+        client_id, secret = value['client_id'], value['client_secret']
+        if not isinstance(client_id, str) or not client_id.endswith('.apps.googleusercontent.com') or not isinstance(secret, str) or not secret:
+            return None
+        return dict(client_id=client_id, client_secret=secret)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
 
 
 def write_json(path, value):
@@ -125,13 +145,16 @@ def status():
     with LOCK:
         folder = private_dir()
         token = read_json(folder/'token.json', {})
-        return dict(configured=(folder/'client.json').exists(), connected=bool(token.get('refresh_token')),
+        return dict(configured=oauth_client() is not None, connected=bool(token.get('refresh_token')),
                     scope=SCOPE)
 
 
 @router.post('/client')
 async def configure_client(request: WebRequest, file: UploadFile = File(...)):
     local_request(request)
+    if os.getenv('M49_GOOGLE_CLIENT_FILE'):
+        await file.close()
+        raise HTTPException(409, 'Cấu hình Google do quản trị viên quản lý trên backend.')
     try:
         raw = await file.read(64*1024+1)
         if len(raw) > 64*1024:
@@ -153,16 +176,16 @@ async def configure_client(request: WebRequest, file: UploadFile = File(...)):
 
 
 @router.post('/connect')
-def connect(request: WebRequest):
+def connect(request: WebRequest, run_id: UUID | None = None):
     local_request(request)
     with LOCK:
-        client = read_json(private_dir()/'client.json')
+        client = oauth_client()
         if not client:
-            raise HTTPException(422, 'Cấu hình OAuth client Google một lần trước khi kết nối')
+            raise HTTPException(503, 'Kết nối Google chưa được quản trị viên cấu hình. Liên hệ người cung cấp ứng dụng.')
         state, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(64)
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
         PENDING.clear()
-        PENDING[state] = (time.time()+600, verifier)
+        PENDING[state] = (time.time()+600, verifier, str(run_id) if run_id else None)
         return {'url': 'https://accounts.google.com/o/oauth2/v2/auth?'+urlencode(dict(
             client_id=client['client_id'], redirect_uri=redirect_uri(), response_type='code', scope=SCOPE,
             access_type='offline', prompt='consent', state=state,
@@ -177,7 +200,9 @@ def callback(state: str = '', code: str = '', error: str = ''):
             raise HTTPException(400, 'Phiên cấp quyền hết hạn hoặc không hợp lệ. Kết nối lại từ ứng dụng.')
         if error or not code:
             return HTMLResponse('<meta charset="utf-8"><p>Chưa được cấp quyền Google. Quay lại ứng dụng để thử lại.</p>', status_code=400)
-        client = read_json(private_dir()/'client.json')
+        client = oauth_client()
+        if not client:
+            raise HTTPException(503, 'Cấu hình Google của ứng dụng không khả dụng. Liên hệ quản trị viên.')
         stage = 'Đổi mã cấp quyền Google'
         try:
             token = token_request({**client, 'code': code, 'code_verifier': pending[1],
@@ -200,7 +225,36 @@ def callback(state: str = '', code: str = '', error: str = ''):
             raise HTTPException(400, f'{stage}: Google trả dữ liệu thiếu hoặc không hợp lệ. Bấm Kết nối Google để thử lại.') from None
         except OSError:
             raise HTTPException(400, f'{stage}: Không ghi được cấu hình. Kiểm tra quyền ghi thư mục storage trên máy.') from None
-    return HTMLResponse('<meta charset="utf-8"><h2>Đã kết nối Google Drive</h2><p>M49 sẽ tự tiếp tục và tải notebook nếu bạn đã chọn gửi lượt AI. Giữ web M49 mở; không cần sao chép URL này.</p>', headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
+    content = '<meta charset="utf-8"><h2>Đã kết nối Google Drive</h2><p id="status">M49 sẽ tự tiếp tục và tải notebook nếu bạn đã chọn gửi lượt AI. Giữ web M49 mở; không cần sao chép URL này.</p>'
+    if len(pending) > 2 and pending[2]:
+        # Navigate from the callback itself: Google may sever the opener reference.
+        endpoint = json.dumps('/api/guided/'+pending[2])
+        content += '''<script>
+const endpoint = '''+endpoint+''';
+const deadline = Date.now() + 10 * 60 * 1000;
+async function waitForNotebook() {
+  if (Date.now() > deadline) {
+    document.getElementById('status').textContent = 'Chưa nhận được notebook. Quay lại M49 để kiểm tra và mở Colab.';
+    return;
+  }
+  try {
+    const response = await fetch(endpoint, {cache: 'no-store'});
+    if (response.ok) {
+      const run = await response.json();
+      if (run.colab_url) {
+        const url = new URL(run.colab_url);
+        if (url.protocol === 'https:' && url.hostname === 'colab.research.google.com' && !url.username && !url.password) {
+          window.location.replace(url.href);
+          return;
+        }
+      }
+    }
+  } catch {}
+  setTimeout(waitForNotebook, 2000);
+}
+waitForNotebook();
+</script>'''
+    return HTMLResponse(content, headers={'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer'})
 
 
 @router.post('/disconnect')
@@ -231,7 +285,9 @@ def credentials():
         if not token.get('refresh_token'):
             raise RuntimeError('Kết nối Google Drive để tiếp tục lượt AI')
         if token.get('expires_at', 0) < time.time()+60:
-            client = read_json(folder/'client.json')
+            client = oauth_client()
+            if not client:
+                raise RuntimeError('Cấu hình Google của ứng dụng không khả dụng. Liên hệ quản trị viên.')
             try:
                 updated = token_request({**client, 'refresh_token': token['refresh_token'], 'grant_type': 'refresh_token'})
             except GoogleError as exc:

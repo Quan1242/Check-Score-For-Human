@@ -45,7 +45,25 @@ Sau đó nhấp đúp `chay_web.bat`.
 
 Chọn tác vụ và nhập tên → gán nhãn, chốt đủ 10 mẫu → kết nối Google và mở notebook Colab → bấm **Runtime → Run all** → chỉnh sửa, chốt nhãn AI → xem kết quả.
 
-Lần đầu dùng AI, mở **Cấu hình kết nối Google một lần** trên web để nhập OAuth client JSON loại Desktop app của dự án Google Cloud đã bật Drive API. Nếu ứng dụng Google đang ở chế độ Testing, thêm tài khoản sử dụng vào Test users. Colab 3D cần GPU.
+Ở bước AI, bấm **Đăng nhập Google và mở Colab**, đăng nhập tài khoản của bạn và đồng ý cấp quyền. Web tự tải notebook và dữ liệu lên Drive của tài khoản đó rồi mở Colab. Bấm **Runtime → Run all**, xác nhận tài khoản Google trong notebook khi được hỏi; kết quả tự về web để tiếp tục sửa nhãn AI. Giữ web và backend đang chạy. Không cần tải tệp thủ công hoặc nhập OAuth JSON trên giao diện. Colab 3D cần GPU.
+
+<details>
+<summary>Dành cho người cung cấp ứng dụng: cấu hình Google một lần</summary>
+
+Repo có sẵn OAuth client **Desktop app** dùng chung cho bản thử tại `backend/app/google-oauth-client.json`. Bản clone mới tự dùng cấu hình này; mỗi người vẫn đăng nhập và cấp quyền bằng tài khoản Google riêng. Cấu hình riêng hiện có tại `backend/storage/google-colab/client.json` được ưu tiên khi chạy bằng BAT. Để dùng tệp cấu hình khác do quản trị viên quản lý, đặt đường dẫn tuyệt đối trong môi trường của backend trước khi khởi động:
+
+```powershell
+$env:M49_GOOGLE_CLIENT_FILE = 'C:\private\m49-google-client.json'
+.\chay_web.bat
+```
+
+Tệp có thể là JSON Desktop app tải từ Google (`installed`) hoặc cấu hình gồm `client_id` và `client_secret`. Tệp `.env.example` chỉ minh họa biến môi trường; BAT không tự đọc `.env`. Nếu cấu hình thiếu hoặc sai, web báo tính năng Google chưa sẵn sàng thay vì yêu cầu người dùng tạo OAuth client.
+
+Nếu ứng dụng Google còn ở chế độ Testing, quản trị viên cần thêm tài khoản được sử dụng vào Test users và bật Drive API cho dự án. Cấu hình client dùng chung không chứa access token hoặc refresh token. Không đóng gói `token.json` hoặc toàn bộ storage: mỗi người đăng nhập bằng tài khoản riêng. Muốn đổi OAuth client trên một bản cài đã kết nối, ngắt kết nối Google trước khi đổi cấu hình.
+
+Ứng dụng vẫn chạy localhost, một người dùng trên mỗi bản cài; cấu hình này không biến backend thành dịch vụ nhiều tài khoản dùng chung.
+
+</details>
 
 ### Dùng CVAT đã có trên máy
 
@@ -59,7 +77,7 @@ Bấm **Save** trong CVAT, quay về M49, nhập thời gian cho từng ảnh v�
 
 Ở bước AI, chọn **Tải checkpoint .pt của tôi**, kết nối Google rồi chọn model Ultralytics đúng tác vụ: detection cho 2D, segmentation cho SEG; tối đa 512 MiB. Model cần có lớp phù hợp với bộ mẫu (`car` trong luồng 10 mẫu).
 
-Sau khi nhận tệp trên máy, bấm **Đồng ý tải notebook và mở Colab** để chuyển model và dữ liệu lên Drive. Trong Colab, bấm **Run all** bằng cùng tài khoản Google. Notebook kiểm tra checksum, tác vụ và lớp của model trước khi dự đoán. Việc tải tệp thành công chưa xác nhận model tương thích; lỗi nạp model được hiển thị ở cell Colab. Model riêng 3D chưa được hỗ trợ.
+Sau khi nhận tệp trên máy, bấm **Tải dữ liệu và mở Colab** để chuyển model và dữ liệu lên Drive. Trong Colab, bấm **Run all** bằng cùng tài khoản Google. Notebook kiểm tra checksum, tác vụ và lớp của model trước khi dự đoán. Việc tải tệp thành công chưa xác nhận model tương thích; lỗi nạp model được hiển thị ở cell Colab. Model riêng 3D chưa được hỗ trợ.
 
 ## Giới hạn triển khai và thông tin đăng nhập
 

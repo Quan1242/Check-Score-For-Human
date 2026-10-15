@@ -6,8 +6,8 @@ import { corners, cuboidEdges as edges, editCuboid, handles, projectPoint, segme
 import type { Cuboid, Handle, Plane } from './cuboidGeometry';
 
 type Props = { asset: Asset; objects: Annotation[]; selected: string; onSelect: (id: string) => void;
-  onChange: (objects: Annotation[]) => void; category: string; disabled: boolean };
-export default function CloudEditor({ asset, objects, selected, onSelect, onChange, category, disabled }: Props) {
+  onChange: (objects: Annotation[]) => void; category: string; disabled: boolean; viewOnly?: boolean; annotationColor?: string };
+export default function CloudEditor({ asset, objects, selected, onSelect, onChange, category, disabled, viewOnly = false, annotationColor = '#53e0b4' }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [points, setPoints] = useState<Vec3[]>([]), [status, setStatus] = useState('Đang đọc point cloud…');
   const [angle, setAngle] = useState(0.6), [tilt, setTilt] = useState(0.7), [zoom, setZoom] = useState(8);
@@ -94,7 +94,7 @@ export default function CloudEditor({ asset, objects, selected, onSelect, onChan
       if (obj.geometry.kind !== 'cuboid3d') continue;
       const g = obj.geometry, [l] = g.size_lwh, [x, y, z] = g.center;
       const vertices = corners(g);
-      ctx.strokeStyle = obj.id === selected ? '#ffc857' : '#53e0b4'; ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = obj.id === selected ? 3 : 1.5;
+      ctx.strokeStyle = obj.id === selected ? '#ffc857' : annotationColor; ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = obj.id === selected ? 3 : 1.5;
       for (const [a,b] of edges) { ctx.beginPath(); ctx.moveTo(...project(vertices[a])); ctx.lineTo(...project(vertices[b])); ctx.stroke(); }
       const center = project(g.center), nose = project([x+l/2*Math.cos(g.yaw), y+l/2*Math.sin(g.yaw), z]);
       ctx.beginPath(); ctx.moveTo(...center); ctx.lineTo(...nose); ctx.stroke(); ctx.fillText(obj.category, center[0]+5, center[1]-7);
@@ -105,23 +105,23 @@ export default function CloudEditor({ asset, objects, selected, onSelect, onChan
         }
       }
     }
-  }, [points, shown, selected, angle, tilt, zoom, pan, plane, tool, disabled]);
+  }, [points, shown, selected, angle, tilt, zoom, pan, plane, tool, disabled, annotationColor]);
   const current = objects.find(o => o.id === selected), g = current?.geometry.kind === 'cuboid3d' ? current.geometry : null;
   function change(next: Cuboid) { if (current) onChange(objects.map(o => o.id === current.id ? { ...o, geometry: next } : o)); }
   return <div>
     <div className="editor-toolbar">
-      <button disabled={disabled} onClick={() => { const id = crypto.randomUUID(); onChange([...objects, { id, category, geometry: { kind: 'cuboid3d', center: [0,0,0], size_lwh: [4,2,1.5], yaw: 0, frame: 'lidar' } }]); onSelect(id); }}>Thêm cuboid</button>
+      {!viewOnly && <button disabled={disabled} onClick={() => { const id = crypto.randomUUID(); onChange([...objects, { id, category, geometry: { kind: 'cuboid3d', center: [0,0,0], size_lwh: [4,2,1.5], yaw: 0, frame: 'lidar' } }]); onSelect(id); }}>Thêm cuboid</button>}
       <button className="secondary" onClick={() => view('top')}>Trên</button>
       <button className="secondary" onClick={() => view('front')}>Trước</button>
       <button className="secondary" onClick={() => view('side')}>Bên</button>
       <button className="secondary" onClick={() => { view(null); setZoom(8); setPan([0,0]); }}>Phối cảnh</button>
-      <button className={tool==='edit' ? '' : 'secondary'} onClick={() => { cancel(); setTool('edit'); }}>Chọn / chỉnh hộp</button>
+      {!viewOnly && <button className={tool==='edit' ? '' : 'secondary'} onClick={() => { cancel(); setTool('edit'); }}>Chọn / chỉnh hộp</button>}
       <button className={tool==='pan' ? '' : 'secondary'} onClick={() => { cancel(); setTool('pan'); }}>Di chuyển khung nhìn</button>
     </div>
     <canvas ref={canvas} width={1000} height={600} className="cloud-editor" aria-label="Point cloud và cuboid LiDAR"
       onWheel={e => { if (!drag.current) setZoom(v => Math.max(0.2, Math.min(100, v*(e.deltaY > 0 ? 0.9 : 1.1)))); }}
       onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancel} onLostPointerCapture={cancel}/>
-    <p className="muted">{status}. Cuộn để zoom; kéo nền để di chuyển khung nhìn. Chọn cạnh hộp hoặc chọn trong danh sách. Ở góc Trên: kéo Tâm, Dài, Rộng, Xoay. Ở góc Trước/Bên: kéo Tâm hoặc Cao. Kích thước thay đổi quanh tâm; bắt đầu timer để chỉnh. Mỗi lần thả chuột là một bước Undo.</p>
+    <p className="muted">{status}. {viewOnly ? 'Chỉ xem. Cuộn để zoom; kéo nền để di chuyển khung nhìn.' : 'Cuộn để zoom; kéo nền để di chuyển khung nhìn. Chọn cạnh hộp hoặc chọn trong danh sách. Ở góc Trên: kéo Tâm, Dài, Rộng, Xoay. Ở góc Trước/Bên: kéo Tâm hoặc Cao. Kích thước thay đổi quanh tâm; bắt đầu timer để chỉnh. Mỗi lần thả chuột là một bước Undo.'}</p>
     <div className="fields"><label>Góc nhìn<input type="range" min={-Math.PI} max={Math.PI} step={0.01} value={angle} onChange={e => { cancel(); setPlane(null); setAngle(Number(e.target.value)); }}/></label><label>Độ nghiêng<input type="range" min={-Math.PI/2} max={Math.PI/2} step={0.01} value={tilt} onChange={e => { cancel(); setPlane(null); setTilt(Number(e.target.value)); }}/></label></div>
     {g && <fieldset disabled={disabled}><legend>Cuboid được chọn · mét / radian</legend><div className="fields">
       {(['center', 'size_lwh'] as const).flatMap(key => g[key].map((value, i) => <label key={`${key}-${i}`}>{key === 'center' ? ['Tâm X','Tâm Y','Tâm Z'][i] : ['Dài','Rộng','Cao'][i]}<input type="number" step="0.1" min={key === 'size_lwh' ? 0.01 : undefined} value={value} onChange={e => { const n = e.target.valueAsNumber; if (!Number.isFinite(n) || (key === 'size_lwh' && n <= 0)) return; const v = [...g[key]] as Vec3; v[i] = n; change({ ...g, [key]: v }); }}/></label>))}

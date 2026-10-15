@@ -1,0 +1,30 @@
+.results-panel h3{margin:20px 0 8px;font-size:15px}
+.results-panel p{font-size:12px;margin:8px 0}
+.results-panel table{margin-top:10px;font-size:12px;font-variant-numeric:tabular-nums}
+.results-panel th,.results-panel td{padding:9px 8px;line-height:1.45;white-space:nowrap}
+.results-panel th:first-child,.results-panel td:first-child{white-space:normal;min-width:140px}
+.results-panel th{font-size:11px}
+.result-person{display:block;color:#786c86;font-weight:400;margin-top:3px;overflow-wrap:anywhere}
+.results-extra{margin:12px 0;padding:12px 0;border-bottom:1px solid #eee9f5}
+.results-extra>summary{font-size:12px;color:#655075}
+.results-panel .score-detail{padding:10px 0}
+.results-table-scroll{overflow-x:auto}
+.comparison-toggle{margin:18px 0 0}
+.ground-truth-comparison{margin-top:20px;border-top:1px solid #e9e2f1;padding-top:4px}
+.comparison-navigation{display:flex;align-items:end;gap:12px;margin:16px 0;flex-wrap:wrap}
+.comparison-navigation label{flex:1;min-width:160px}
+.comparison-navigation button{margin:0;padding:10px 14px}
+.comparison-navigation>span{align-self:center;font-size:12px;color:#786c86}
+.comparison-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+.comparison-methods{display:grid;gap:12px;min-width:0}
+.comparison-truth{position:sticky;top:16px;min-width:0}
+.comparison-card{border:1px solid #e9e2f1;border-radius:12px;padding:12px;background:#faf8fe;min-width:0;margin-bottom:10px}
+.comparison-card-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+.comparison-card h4{margin:0;font-size:12px;display:flex;align-items:center;gap:7px}
+.comparison-card h4 span{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.comparison-card small{font-size:11px;color:#786c86}
+.comparison-author{display:block;margin-bottom:8px;overflow-wrap:anywhere}
+.comparison-image{display:block;width:100%;height:auto;max-height:420px;background:#102332;border-radius:8px}
+.comparison-card .editor-toolbar button{font-size:11px;padding:7px}
+.comparison-card .fields label{min-width:80px}
+@media(max-width:700px){.comparison-layout{grid-template-columns:1fr}.comparison-truth{position:static;grid-row:1}.comparison-navigation{gap:8px}.comparison-navigation label{flex-basis:100%;order:-1}}

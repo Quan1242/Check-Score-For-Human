@@ -11,7 +11,9 @@ from app import main
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     import asyncio
-    from app import colab_sync
+    from app import colab_sync, colab_google
+    monkeypatch.delenv('M49_GOOGLE_CLIENT_FILE', raising=False)
+    monkeypatch.setattr(colab_google, 'BUNDLED_CLIENT', tmp_path/'bundled-client.json')
     async def idle_watch():
         await asyncio.Event().wait()
     monkeypatch.setattr(colab_sync, 'watch', idle_watch)

@@ -91,7 +91,7 @@ export default function GuidedWorkflow({ onBlocked }: { onBlocked?: (value: bool
     await action(async () => {
       try {
         if (!google.connected) {
-          const result = await postJSON<{url:string}>('/colab/google/connect', {});
+          const result = await postJSON<{url:string}>(`/colab/google/connect${sendNotebook ? `?run_id=${encodeURIComponent(selectedRun)}` : ''}`, {});
           setAuthUrl(result.url);
           if (popup) popup.location.replace(result.url);
           setStatus('Đang chờ bạn đồng ý cấp quyền Google. Web sẽ tự tiếp tục sau khi được cấp quyền.');
@@ -147,12 +147,8 @@ export default function GuidedWorkflow({ onBlocked }: { onBlocked?: (value: bool
     </>}
     {run?.phase==='ai' && <section className="panel"><h2>3 · AI gán nhãn độc lập</h2>
       {(!run.job_id || run.transport === 'google') && <div>
-        <p>{google.connected ? 'Đã kết nối Google Drive.' : 'Kết nối Google để tự chuyển bộ ảnh đã chọn sang Colab và nhận kết quả.'}</p>
-        {!google.configured && <details className="panel"><summary>Cấu hình kết nối Google một lần</summary>
-          <p>Trong Google Cloud, bật Google Drive API, cấu hình OAuth consent screen và tạo OAuth client loại Desktop app. Nếu ứng dụng đang ở chế độ Testing, thêm tài khoản của bạn vào Test users.</p>
-          <p><a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noreferrer">Mở cấu hình Google</a>. Tải JSON của OAuth client rồi chọn bên dưới. Sau bước này, các lượt sau chỉ cần đăng nhập/cấp quyền khi Google yêu cầu.</p>
-          <label>OAuth client JSON<input disabled={busy} type="file" accept=".json" onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(file)void action(async()=>setGoogle(await upload('/colab/google/client',file)));}}/></label>
-        </details>}
+        <p>{google.connected ? 'Đã kết nối Google. Notebook và dữ liệu sẽ được lưu vào Drive của tài khoản đã kết nối.' : 'Đăng nhập Google và đồng ý cấp quyền. Web sẽ tự chuyển notebook và dữ liệu lên Drive của bạn, rồi mở Colab.'}</p>
+        {!google.configured && <p role="alert">Kết nối Google chưa được quản trị viên cấu hình. Liên hệ người cung cấp ứng dụng để bật tính năng này.</p>}
         {!google.connected && (run.job_id || preset==='custom') && <button disabled={busy||!google.configured} onClick={()=>void connectGoogle()}>Kết nối Google để tiếp tục</button>}
         {authUrl && <p><button className="secondary" onClick={()=>consent.current?.abort()}>Hủy chờ cấp quyền</button> <a href={authUrl} target="_blank" rel="noreferrer">Mở cửa sổ cấp quyền nếu trình duyệt chặn popup</a></p>}
         {google.connected && <button className="secondary" disabled={busy} onClick={()=>void action(async()=>setGoogle(await postJSON('/colab/google/disconnect',{})))}>Ngắt kết nối trên máy này</button>}
@@ -167,9 +163,9 @@ export default function GuidedWorkflow({ onBlocked }: { onBlocked?: (value: bool
           const result=await upload<{checkpoint:string}>('/colab/google/checkpoints',file);setCheckpoint(result.checkpoint);setCheckpointName(file.name);
           setStatus('Đã nhận model trên máy. Bấm Đồng ý tải notebook để gửi model cùng dữ liệu lên Drive. Colab sẽ kiểm tra model khi chạy.');
         });}}/>{checkpointName}</label>}
-        <p className="muted">Colab cá nhân cần bạn bấm Run all và xác nhận quyền Google trong notebook. Ảnh, mã lượt, model và kết quả được chuyển tự động. Với checkpoint riêng, chỉ chọn tệp bạn tin cậy.</p>
-        <p>Sau khi bạn đồng ý, web tự tải notebook .ipynb và {run.total} mẫu lên Drive của bạn rồi mở Colab. Không cần sao chép hay gửi URL.</p>
-        <button disabled={!google.configured||(preset==='custom'&&!checkpoint)||!Number.isFinite(confidence)||confidence<0.01||confidence>1} onClick={()=>void connectGoogle(true)}>{google.connected ? 'Đồng ý tải notebook và mở Colab' : 'Đồng ý cấp quyền và tự tải notebook'}</button>
+        <ol className="colab-instructions"><li>Bấm nút bên dưới, đăng nhập Google và đồng ý cấp quyền nếu được hỏi.</li><li>Web tự tải notebook và {run.total} mẫu, rồi mở Colab.</li><li>Trong Colab, bấm <strong>Runtime → Run all</strong> và xác nhận tài khoản Google khi được hỏi.</li><li>Chạy xong, kết quả tự về web để tiếp tục sửa nhãn AI.</li></ol>
+        <p className="muted">Không cần tải tệp thủ công. Giữ web và backend đang chạy trong lúc chờ. Với checkpoint riêng, chỉ chọn tệp bạn tin cậy.</p>
+        <button disabled={!google.configured||(preset==='custom'&&!checkpoint)||!Number.isFinite(confidence)||confidence<0.01||confidence>1} onClick={()=>void connectGoogle(true)}>{google.connected ? 'Tải dữ liệu và mở Colab' : 'Đăng nhập Google và mở Colab'}</button>
       </fieldset> : run.transport === 'google' ? <>
         <p>{run.colab_url ? 'Notebook đã sẵn sàng. Mở Colab, bấm Runtime → Run all và cấp quyền bằng cùng tài khoản Google đã kết nối.' : 'Đang tải ảnh và chuẩn bị notebook trên Drive…'}</p>
         {run.colab_url && <p><a href={run.colab_url} target="_blank" rel="noreferrer">Mở notebook của lượt này trên Colab</a></p>}
